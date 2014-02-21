@@ -75,10 +75,10 @@ func OpenCreateLogFile(path string) (*LogFile, error) {
 }
 
 func writeUtf8(buf []byte, str string) []byte {
-	var varintBuf [binary.MaxVarintLen64]byte
+	var int32Buf [4]byte
 
-	l := binary.PutUvarint(varintBuf[:], uint64(len(str)))
-	buf = append(buf, varintBuf[:l]...)
+	binary.BigEndian.PutUint32(int32Buf[:], uint32(len(str)))
+	buf = append(buf, int32Buf[:]...)
 	buf = append(buf, []byte(str)...)
 
 	return buf
@@ -100,8 +100,8 @@ func writeEntry(buf []byte, ent *LogEntry, prevPayloadLen int32, backHop int32) 
 	buf = writeUtf8(buf, ent.Source)
 	buf = append(buf, byte(ent.Encoding))
 
-	binary.BigEndian.PutUint64(int64Buf[:], uint64(len(ent.Message)))
-	buf = append(buf, int64Buf[:]...)
+	binary.BigEndian.PutUint32(int64Buf[:], uint32(len(ent.Message)))
+	buf = append(buf, int64Buf[:4]...)
 
 	buf = append(buf, ent.Message...)
 
@@ -127,7 +127,8 @@ func writeHop(file *os.File, currentOffset int64, hopStartOffset int64) bool {
 func readEntryHeader(file *os.File, offset int64) (header entryHeader, ok bool) {
 	var headerBuf [entryHeaderLength]byte
 
-	if n, _ := file.ReadAt(headerBuf[:], offset); n < entryHeaderLength {
+	if n, err := file.ReadAt(headerBuf[:], offset); n < entryHeaderLength {
+		println("Failed to read entry header:", err)
 		ok = false
 		return
 	}
@@ -140,6 +141,193 @@ func readEntryHeader(file *os.File, offset int64) (header entryHeader, ok bool) 
 
 	ok = true
 	return
+}
+
+func readBytes(file *os.File, offset int64) ([]byte, error) {
+	var int32Buf [4]byte
+
+	if _, err := file.ReadAt(int32Buf[:], offset); err != nil {
+		return nil, err
+	}
+
+	l := binary.BigEndian.Uint32(int32Buf[:])
+	result := make([]byte, l)
+
+	if _, err := file.ReadAt(result, offset + int64(4)); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
+	var int64Buf [8]byte
+
+	ent = new(LogEntry)
+	ok = true
+
+	offset += int64(entryPayloadBase)
+
+	if _, err := file.ReadAt(int64Buf[:], offset); err != nil {
+		println("Failed to read log entry:", err)
+		ok = false
+		return
+	}
+
+	ent.Timestamp = int64(binary.BigEndian.Uint64(int64Buf[:]))
+	offset += 8
+
+	if _, err := file.ReadAt(int64Buf[:1], offset); err != nil {
+		println("Failed to read log entry:", err)
+		ok = false
+		return
+	}
+
+	ent.Severity = int(int64Buf[0])
+	offset += 1
+
+	if s, err := readBytes(file, offset); err != nil {
+		println("Failed to read log entry:", err)
+		ok = false
+		return
+	} else {
+		ent.Source = string(s)
+		offset += int64(len(s))
+	}
+
+	if _, err := file.ReadAt(int64Buf[:1], offset); err != nil {
+		println("Failed to read log entry:", err)
+		ok = false
+		return
+	}
+
+	ent.Encoding = int(int64Buf[0])
+	offset += 1
+
+	if m, err := readBytes(file, offset); err != nil {
+		println("Failed to read log entry:", err)
+		ok = false
+		return
+	} else {
+		ent.Message = m
+	}
+
+	return
+}
+
+func findLeftBoundFromLeft(file *os.File, q *logQuery, offset int64, lastEntryOffset int64) {
+
+	//Go right without hops.
+	for {
+		header, ok := readEntryHeader(file, offset)
+
+		if !ok {
+			close(q.result)
+			return
+		}
+
+		if header.timestamp >= q.from && header.timestamp <= q.to {
+			readEntries(file, q, offset, lastEntryOffset)
+			return
+		}
+
+		if offset == lastEntryOffset {
+			close(q.result)
+			return
+		}
+
+		offset += header.NextOffset()
+	}
+}
+
+func findLeftBoundFromRight(file *os.File, q *logQuery, offset int64, lastEntryOffset int64) {
+	prevOffset := offset
+
+	//Go left without hops.
+	for {
+		header, ok := readEntryHeader(file, offset)
+
+		if !ok {
+			close(q.result)
+			return
+		}
+
+		if header.timestamp < q.from {
+			readEntries(file, q, prevOffset, lastEntryOffset)
+			return
+		} else if offset == 0 {
+			readEntries(file, q, offset, lastEntryOffset)
+			return
+		}
+
+		prevOffset = offset
+		offset -= header.PrevOffset()
+	}
+}
+
+func readEntries(file *os.File, q *logQuery, offset int64, lastEntryOffset int64) {
+	for {
+		header, ok := readEntryHeader(file, offset)
+
+		if !ok {
+			close(q.result)
+			return
+		}
+
+		if header.timestamp >= q.from && header.timestamp <= q.to {
+			if ent, ok := readEntry(file, offset); ok {
+				//TODO: Filtering.
+
+				q.result <- ent
+			} else {
+				close(q.result)
+				return
+			}
+		} else {
+			close(q.result)
+			return
+		}
+
+		if offset < lastEntryOffset {
+			offset += header.NextOffset()
+		} else {
+			close(q.result)
+			return
+		}
+	}
+}
+
+func findAndReadEntries(file *os.File, lastEntryOffset int64, q *logQuery) {
+	offset := lastEntryOffset
+
+	//Go left doing hops.
+	for {
+		header, ok := readEntryHeader(file, offset)
+
+		if !ok {
+			close(q.result)
+			return
+		}
+
+		if header.timestamp < q.from {
+			findLeftBoundFromLeft(file, q, offset, lastEntryOffset)
+			return
+		} else if header.timestamp >= q.from && header.timestamp <= q.to {
+			findLeftBoundFromRight(file, q, offset, lastEntryOffset)
+			return
+		}
+
+		if offset == 0 {
+			close(q.result)
+			return
+		}
+
+		if header.backHop != 0 {
+			offset -= int64(header.backHop)
+		} else {
+			offset -= header.PrevOffset()
+		}
+	}
 }
 
 func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int32, nextHopStartOffset int64, hopCounter int, initialized bool) {
@@ -259,9 +447,20 @@ func (log *LogFile) run(file *os.File) {
 					buf = buf[:0]
 				}
 
-			//case q := <- log.readChan:
+			case q := <- log.readChan:
+				//No entry will pass the filter.
+				if q.from >= q.to || q.minSeverity > q.maxSeverity {
+					close(q.result)
+				}
+
+				lastEntryOffset := currentOffset - int64(prevPayloadLen - entryPayloadBase)
+
+				//TODO: Sync. with closing.
+				go findAndReadEntries(file, lastEntryOffset, q)
 
 			case cmd := <- log.closeChan:
+				//TODO: Wait reads.
+
 				file.Close()
 				cmd.ack <- true
 				stop = true
