@@ -23,6 +23,8 @@ import (
 
 const defaultEntryBufferSize = 1024
 const entryPayloadBase = 16
+const timestampLength = 8
+const entryHeaderLength = entryPayloadBase + timestampLength
 const hopLength = 64
 
 type logQuery struct {
@@ -42,6 +44,22 @@ type LogFile struct {
 	writeChan chan *LogEntry
 	readChan  chan *logQuery
 	closeChan chan *logClose
+}
+
+type entryHeader struct {
+	payloadLength     int32
+	prevPayloadLength int32
+	hop               int32
+	backHop           int32
+	timestamp         int64
+}
+
+func (h *entryHeader) NextOffset() int64 {
+	return int64(h.payloadLength) + int64(entryPayloadBase)
+}
+
+func (h *entryHeader) PrevOffset() int64 {
+	return int64(h.prevPayloadLength) + int64(entryPayloadBase)
 }
 
 func OpenCreateLogFile(path string) (*LogFile, error) {
@@ -66,16 +84,13 @@ func writeUtf8(buf []byte, str string) []byte {
 	return buf
 }
 
-func writeEntry(buf []byte, ent *LogEntry, prevPayloadLen int, backHop int64) ([]byte, int) {
+func writeEntry(buf []byte, ent *LogEntry, prevPayloadLen int32, backHop int32) ([]byte, int32) {
 	for i := 0; i < entryPayloadBase; i++ {
 		buf = append(buf, byte(0))
 	}
 
 	binary.BigEndian.PutUint32(buf[4:], uint32(prevPayloadLen))
-
-	if backHop != 0 {
-		binary.BigEndian.PutUint32(buf[12:], uint32(backHop))
-	}
+	binary.BigEndian.PutUint32(buf[12:], uint32(backHop))
 
 	var int64Buf [8]byte
 	binary.BigEndian.PutUint64(int64Buf[:], uint64(ent.Timestamp))
@@ -90,17 +105,18 @@ func writeEntry(buf []byte, ent *LogEntry, prevPayloadLen int, backHop int64) ([
 
 	buf = append(buf, ent.Message...)
 
-	payloadLen := len(buf) - entryPayloadBase
+	payloadLen := int32(len(buf) - entryPayloadBase)
 	binary.BigEndian.PutUint32(buf, uint32(payloadLen))
 
 	return buf, payloadLen
 }
 
-func writeHop(file *os.File, hopStartOffset int64) bool {
-	var int64Buf [8]byte
-	binary.BigEndian.PutUint64(int64Buf[:], uint64(hopStartOffset))
+func writeHop(file *os.File, currentOffset int64, hopStartOffset int64) bool {
+	var int32Buf [4]byte
 
-	if _, err := file.WriteAt(int64Buf[:], hopStartOffset + int64(8)); err != nil {
+	binary.BigEndian.PutUint32(int32Buf[:], uint32(currentOffset - hopStartOffset))
+
+	if _, err := file.WriteAt(int32Buf[:], hopStartOffset + int64(8)); err != nil {
 		println("Failed to write a hop:", err)
 		return false
 	}
@@ -108,35 +124,30 @@ func writeHop(file *os.File, hopStartOffset int64) bool {
 	return true
 }
 
-func readEntryHeader(file *os.File, offset int64) (ts int64, payloadLen int, nextOffset int64, ok bool) {
-	var int64Buf [8]byte
+func readEntryHeader(file *os.File, offset int64) (header entryHeader, ok bool) {
+	var headerBuf [entryHeaderLength]byte
 
-	if n, _ := file.ReadAt(int64Buf[:], offset); n < 8 {
-		ts = int64(0)
-		nextOffset = offset + int64(n)
-		payloadLen = 0
+	if n, _ := file.ReadAt(headerBuf[:], offset); n < entryHeaderLength {
 		ok = false
 		return
 	}
 
-	payloadLen = int(binary.BigEndian.Uint32(int64Buf[:]))
-	nextOffset = offset + int64(entryPayloadBase) + int64(payloadLen)
+	header.payloadLength = int32(binary.BigEndian.Uint32(headerBuf[:]))
+	header.prevPayloadLength = int32(binary.BigEndian.Uint32(headerBuf[4:]))
+	header.hop = int32(binary.BigEndian.Uint32(headerBuf[8:]))
+	header.backHop = int32(binary.BigEndian.Uint32(headerBuf[12:]))
+	header.timestamp = int64(binary.BigEndian.Uint64(headerBuf[16:]))
 
-	if n, _ := file.ReadAt(int64Buf[:], offset + int64(entryPayloadBase)); n < 8 {
-		ts = int64(0)
-		ok = false
-		return
-	}
-
-	ts = int64(binary.BigEndian.Uint64(int64Buf[:]))
 	ok = true
 	return
 }
 
-func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int, initialized bool) {
+func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int32, nextHopStartOffset int64, hopCounter int, initialized bool) {
 	initialized = true
 	lastTimestampWritten = 0
 	prevPayloadLen = 0
+	nextHopStartOffset = 0
+	hopCounter = hopLength
 
 	offset := int64(0)
 	var fileSize int64
@@ -150,7 +161,8 @@ func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int, 
 	}
 	
 	for {
-		ts, payloadLen, nextOffset, ok := readEntryHeader(file, offset)
+		header, ok := readEntryHeader(file, offset)
+		nextOffset := offset + header.NextOffset()
 
 		if !ok || nextOffset > fileSize {
 			//The file is broken and needs to be fixed.
@@ -162,6 +174,7 @@ func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int, 
 				return
 			}
 
+			//Setting the cursor to the end of the file.
 			if _, err := file.Seek(0, 2); err != nil {
 				println("Failed to seek to the end of a log file:", err)
 				initialized = false
@@ -170,6 +183,12 @@ func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int, 
 
 			return
 		} else if nextOffset == fileSize {
+			//Setting the cursor to the end of the file.
+			if _, err := file.Seek(0, 2); err != nil {
+				println("Failed to seek to the end of a log file:", err)
+				initialized = false
+			}
+
 			return
 		}
 
@@ -178,9 +197,25 @@ func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int, 
 			panic("Next offset must be greater than the current.")
 		}
 
-		offset = nextOffset
-		lastTimestampWritten = ts
-		prevPayloadLen = payloadLen
+		if header.hop > 0 {
+			hopOffset := offset + int64(header.hop)
+			hopCounter = hopLength
+
+			if hopOffset <= fileSize {
+				offset = hopOffset
+				nextHopStartOffset = offset
+			} else {
+				nextHopStartOffset = offset
+				offset = nextOffset
+			}
+
+		} else {
+			offset = nextOffset
+			hopCounter--
+		}
+		
+		lastTimestampWritten = header.timestamp
+		prevPayloadLen = header.payloadLength
 	}
 
 	return
@@ -190,44 +225,37 @@ func (log *LogFile) run(file *os.File) {
 	buf := make([]byte, 0, defaultEntryBufferSize)
 
 	stop := false
-	lastTimestampWritten, prevPayloadLen, initialized := initLogger(file)
-	hopCounter := hopLength
-	nextHopStartOffset := int64(0) //TODO: Get from init.
+	lastTimestampWritten, prevPayloadLen, nextHopStartOffset, hopCounter, initialized := initLogger(file)
+	currentOffset, _ := file.Seek(0, 1)
 
 	for !stop {
 		select {
 			case ent := <- log.writeChan:
-				if initialized {
-					isAppending := ent.Timestamp >= lastTimestampWritten
-					backHop := int64(0)
-					
-					if hopCounter--; hopCounter == 0 && isAppending {
-						backHop = nextHopStartOffset
+				if initialized && ent.Timestamp >= lastTimestampWritten {
+					backHop := int32(0)
+
+					if hopCounter--; hopCounter == 0 {
+						backHop = int32(currentOffset - nextHopStartOffset)
 					}
 
 					buf, prevPayloadLen = writeEntry(buf, ent, prevPayloadLen, backHop)
 
-					if isAppending {
-						currentOffset, _ := file.Seek(0, 1)
-
-						if _, err := file.Write(buf); err != nil {
-							println("Failed to wrtie log entry:", err)
-						
-						} else {
-							if hopCounter == 0 {
-								if writeHop(file, nextHopStartOffset) {
-									nextHopStartOffset = currentOffset
-									hopCounter = hopLength
-								}
+					if _, err := file.Write(buf); err != nil {
+						println("Failed to wrtie log entry:", err)
+						currentOffset, _ = file.Seek(0, 1)
+					
+					} else {
+						if hopCounter == 0 {
+							if writeHop(file, currentOffset, nextHopStartOffset) {
+								nextHopStartOffset = currentOffset
+								hopCounter = hopLength
 							}
 						}
 
-						lastTimestampWritten = ent.Timestamp
-
-					} else {
-						// TODO: Shift the tail, insert the record.
+						currentOffset += int64(len(buf))
 					}
 
+					lastTimestampWritten = ent.Timestamp
 					buf = buf[:0]
 				}
 
