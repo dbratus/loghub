@@ -19,6 +19,8 @@ package main
 import (
 	"os"
 	"encoding/binary"
+	"sync/atomic"
+	"time"
 )
 
 const defaultEntryBufferSize = 1024
@@ -297,7 +299,9 @@ func readEntries(file *os.File, q *logQuery, offset int64, lastEntryOffset int64
 	}
 }
 
-func findAndReadEntries(file *os.File, lastEntryOffset int64, q *logQuery) {
+func findAndReadEntries(file *os.File, lastEntryOffset int64, q *logQuery, readsCounter *int32) {
+	defer atomic.AddInt32(readsCounter, -1)
+
 	offset := lastEntryOffset
 
 	//Go left doing hops.
@@ -415,6 +419,7 @@ func (log *LogFile) run(file *os.File) {
 	stop := false
 	lastTimestampWritten, prevPayloadLen, nextHopStartOffset, hopCounter, initialized := initLogger(file)
 	currentOffset, _ := file.Seek(0, 1)
+	readsCounter := new(int32)
 
 	for !stop {
 		select {
@@ -455,11 +460,13 @@ func (log *LogFile) run(file *os.File) {
 
 				lastEntryOffset := currentOffset - int64(prevPayloadLen - entryPayloadBase)
 
-				//TODO: Sync. with closing.
-				go findAndReadEntries(file, lastEntryOffset, q)
+				atomic.AddInt32(readsCounter, 1)
+				go findAndReadEntries(file, lastEntryOffset, q, readsCounter)
 
 			case cmd := <- log.closeChan:
-				//TODO: Wait reads.
+				for cnt := atomic.LoadInt32(readsCounter); cnt > 0; cnt = atomic.LoadInt32(readsCounter) {
+					time.Sleep(time.Millisecond * 100)
+				}
 
 				file.Close()
 				cmd.ack <- true
