@@ -17,8 +17,9 @@
 package main
 
 import (
-	"os"
 	"encoding/binary"
+	"os"
+	"regexp"
 	"sync/atomic"
 	"time"
 )
@@ -31,7 +32,7 @@ const hopLength = 64
 
 type logQuery struct {
 	from        int64
-	to     		int64
+	to          int64
 	minSeverity int
 	maxSeverity int
 	source      string
@@ -65,8 +66,8 @@ func (h *entryHeader) PrevOffset() int64 {
 }
 
 func OpenCreateLogFile(path string) (*LogFile, error) {
-	if f, err := os.OpenFile(path, os.O_RDWR | os.O_CREATE, 0660); err == nil {
-		log := &LogFile{ make(chan *LogEntry), make(chan *logQuery), make(chan *logClose) }
+	if f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0660); err == nil {
+		log := &LogFile{make(chan *LogEntry), make(chan *logQuery), make(chan *logClose)}
 
 		go log.run(f)
 
@@ -102,9 +103,8 @@ func writeEntry(buf []byte, ent *LogEntry, prevPayloadLen int32, backHop int32) 
 	buf = writeUtf8(buf, ent.Source)
 	buf = append(buf, byte(ent.Encoding))
 
-	binary.BigEndian.PutUint32(int64Buf[:], uint32(len(ent.Message)))
+	binary.BigEndian.PutUint32(int64Buf[:4], uint32(len(ent.Message)))
 	buf = append(buf, int64Buf[:4]...)
-
 	buf = append(buf, ent.Message...)
 
 	payloadLen := int32(len(buf) - entryPayloadBase)
@@ -116,10 +116,10 @@ func writeEntry(buf []byte, ent *LogEntry, prevPayloadLen int32, backHop int32) 
 func writeHop(file *os.File, currentOffset int64, hopStartOffset int64) bool {
 	var int32Buf [4]byte
 
-	binary.BigEndian.PutUint32(int32Buf[:], uint32(currentOffset - hopStartOffset))
+	binary.BigEndian.PutUint32(int32Buf[:], uint32(currentOffset-hopStartOffset))
 
-	if _, err := file.WriteAt(int32Buf[:], hopStartOffset + int64(8)); err != nil {
-		println("Failed to write a hop:", err)
+	if _, err := file.WriteAt(int32Buf[:], hopStartOffset+int64(8)); err != nil {
+		println("Failed to write a hop:", err.Error())
 		return false
 	}
 
@@ -129,8 +129,8 @@ func writeHop(file *os.File, currentOffset int64, hopStartOffset int64) bool {
 func readEntryHeader(file *os.File, offset int64) (header entryHeader, ok bool) {
 	var headerBuf [entryHeaderLength]byte
 
-	if n, err := file.ReadAt(headerBuf[:], offset); n < entryHeaderLength {
-		println("Failed to read entry header:", err)
+	if _, err := file.ReadAt(headerBuf[:], offset); err != nil {
+		println("Failed to read entry header at offset", offset, ":", err.Error())
 		ok = false
 		return
 	}
@@ -155,7 +155,7 @@ func readBytes(file *os.File, offset int64) ([]byte, error) {
 	l := binary.BigEndian.Uint32(int32Buf[:])
 	result := make([]byte, l)
 
-	if _, err := file.ReadAt(result, offset + int64(4)); err != nil {
+	if _, err := file.ReadAt(result, offset+int64(4)); err != nil {
 		return nil, err
 	}
 
@@ -171,7 +171,7 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	offset += int64(entryPayloadBase)
 
 	if _, err := file.ReadAt(int64Buf[:], offset); err != nil {
-		println("Failed to read log entry:", err)
+		println("Failed to read log entry timestamp at", offset, ":", err.Error())
 		ok = false
 		return
 	}
@@ -180,7 +180,7 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	offset += 8
 
 	if _, err := file.ReadAt(int64Buf[:1], offset); err != nil {
-		println("Failed to read log entry:", err)
+		println("Failed to read log entry severity at", offset, ":", err.Error())
 		ok = false
 		return
 	}
@@ -189,16 +189,16 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	offset += 1
 
 	if s, err := readBytes(file, offset); err != nil {
-		println("Failed to read log entry:", err)
+		println("Failed to read log entry source at", offset, ":", err.Error())
 		ok = false
 		return
 	} else {
 		ent.Source = string(s)
-		offset += int64(len(s))
+		offset += int64(len(s) + 4)
 	}
 
 	if _, err := file.ReadAt(int64Buf[:1], offset); err != nil {
-		println("Failed to read log entry:", err)
+		println("Failed to read log entry encoding at", offset, ":", err.Error())
 		ok = false
 		return
 	}
@@ -207,7 +207,7 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	offset += 1
 
 	if m, err := readBytes(file, offset); err != nil {
-		println("Failed to read log entry:", err)
+		println("Failed to read log entry message at", offset, ":", err.Error())
 		ok = false
 		return
 	} else {
@@ -215,6 +215,51 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	}
 
 	return
+}
+
+func readEntries(file *os.File, q *logQuery, offset int64, lastEntryOffset int64) {
+	for {
+		header, ok := readEntryHeader(file, offset)
+
+		if !ok {
+			close(q.result)
+			return
+		}
+
+		var srcRegexp *regexp.Regexp = nil
+		filterBySource := false
+
+		if q.source != "" {
+			filterBySource = true
+
+			if re, err := regexp.Compile(q.source); err == nil {
+				srcRegexp = re
+			}
+		}
+
+		if header.timestamp >= q.from && header.timestamp <= q.to {
+			if ent, ok := readEntry(file, offset); ok {
+				if (!filterBySource || (srcRegexp != nil && srcRegexp.MatchString(ent.Source))) &&
+					ent.Severity >= q.minSeverity &&
+					ent.Severity <= q.maxSeverity {
+					q.result <- ent
+				}
+			} else {
+				close(q.result)
+				return
+			}
+		} else {
+			close(q.result)
+			return
+		}
+
+		if offset < lastEntryOffset {
+			offset += header.NextOffset()
+		} else {
+			close(q.result)
+			return
+		}
+	}
 }
 
 func findLeftBoundFromLeft(file *os.File, q *logQuery, offset int64, lastEntryOffset int64) {
@@ -238,64 +283,11 @@ func findLeftBoundFromLeft(file *os.File, q *logQuery, offset int64, lastEntryOf
 			return
 		}
 
+		if header.NextOffset() == 0 {
+			panic("Failed to go forth in the log. Offset of the next entry is unknown.")
+		}
+
 		offset += header.NextOffset()
-	}
-}
-
-func findLeftBoundFromRight(file *os.File, q *logQuery, offset int64, lastEntryOffset int64) {
-	prevOffset := offset
-
-	//Go left without hops.
-	for {
-		header, ok := readEntryHeader(file, offset)
-
-		if !ok {
-			close(q.result)
-			return
-		}
-
-		if header.timestamp < q.from {
-			readEntries(file, q, prevOffset, lastEntryOffset)
-			return
-		} else if offset == 0 {
-			readEntries(file, q, offset, lastEntryOffset)
-			return
-		}
-
-		prevOffset = offset
-		offset -= header.PrevOffset()
-	}
-}
-
-func readEntries(file *os.File, q *logQuery, offset int64, lastEntryOffset int64) {
-	for {
-		header, ok := readEntryHeader(file, offset)
-
-		if !ok {
-			close(q.result)
-			return
-		}
-
-		if header.timestamp >= q.from && header.timestamp <= q.to {
-			if ent, ok := readEntry(file, offset); ok {
-				//TODO: Filtering.
-
-				q.result <- ent
-			} else {
-				close(q.result)
-				return
-			}
-		} else {
-			close(q.result)
-			return
-		}
-
-		if offset < lastEntryOffset {
-			offset += header.NextOffset()
-		} else {
-			close(q.result)
-			return
-		}
 	}
 }
 
@@ -316,14 +308,16 @@ func findAndReadEntries(file *os.File, lastEntryOffset int64, q *logQuery, reads
 		if header.timestamp < q.from {
 			findLeftBoundFromLeft(file, q, offset, lastEntryOffset)
 			return
-		} else if header.timestamp >= q.from && header.timestamp <= q.to {
-			findLeftBoundFromRight(file, q, offset, lastEntryOffset)
-			return
 		}
 
 		if offset == 0 {
-			close(q.result)
-			return
+			if header.timestamp >= q.from && header.timestamp <= q.to {
+				readEntries(file, q, offset, lastEntryOffset)
+				return
+			} else {
+				close(q.result)
+				return
+			}
 		}
 
 		if header.backHop != 0 {
@@ -345,13 +339,17 @@ func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int32
 	var fileSize int64
 
 	if stat, err := file.Stat(); err != nil {
-		println("Failed to get stat of a log file:", err)
+		println("Failed to get stat of a log file:", err.Error())
 		initialized = false
 		return
 	} else {
 		fileSize = stat.Size()
 	}
-	
+
+	if fileSize == 0 {
+		return
+	}
+
 	for {
 		header, ok := readEntryHeader(file, offset)
 		nextOffset := offset + header.NextOffset()
@@ -361,14 +359,14 @@ func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int32
 			//By truncating the file, we remove the last record
 			//that was partially written.
 			if err := file.Truncate(offset); err != nil {
-				println("Failed to truncate a log file:", err)
+				println("Failed to truncate a log file:", err.Error())
 				initialized = false
 				return
 			}
 
 			//Setting the cursor to the end of the file.
 			if _, err := file.Seek(0, 2); err != nil {
-				println("Failed to seek to the end of a log file:", err)
+				println("Failed to seek to the end of a log file:", err.Error())
 				initialized = false
 				return
 			}
@@ -377,7 +375,7 @@ func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int32
 		} else if nextOffset == fileSize {
 			//Setting the cursor to the end of the file.
 			if _, err := file.Seek(0, 2); err != nil {
-				println("Failed to seek to the end of a log file:", err)
+				println("Failed to seek to the end of a log file:", err.Error())
 				initialized = false
 			}
 
@@ -405,7 +403,7 @@ func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int32
 			offset = nextOffset
 			hopCounter--
 		}
-		
+
 		lastTimestampWritten = header.timestamp
 		prevPayloadLen = header.payloadLength
 	}
@@ -423,54 +421,54 @@ func (log *LogFile) run(file *os.File) {
 
 	for !stop {
 		select {
-			case ent := <- log.writeChan:
-				if initialized && ent.Timestamp >= lastTimestampWritten {
-					backHop := int32(0)
+		case ent := <-log.writeChan:
+			if initialized && ent.Timestamp >= lastTimestampWritten {
+				backHop := int32(0)
 
-					if hopCounter--; hopCounter == 0 {
-						backHop = int32(currentOffset - nextHopStartOffset)
-					}
+				if hopCounter--; hopCounter == 0 {
+					backHop = int32(currentOffset - nextHopStartOffset)
+				}
 
-					buf, prevPayloadLen = writeEntry(buf, ent, prevPayloadLen, backHop)
+				buf, prevPayloadLen = writeEntry(buf, ent, prevPayloadLen, backHop)
 
-					if _, err := file.Write(buf); err != nil {
-						println("Failed to wrtie log entry:", err)
-						currentOffset, _ = file.Seek(0, 1)
-					
-					} else {
-						if hopCounter == 0 {
-							if writeHop(file, currentOffset, nextHopStartOffset) {
-								nextHopStartOffset = currentOffset
-								hopCounter = hopLength
-							}
+				if _, err := file.Write(buf); err != nil {
+					println("Failed to wrtie log entry:", err.Error())
+					currentOffset, _ = file.Seek(0, 1)
+
+				} else {
+					if hopCounter == 0 {
+						if writeHop(file, currentOffset, nextHopStartOffset) {
+							nextHopStartOffset = currentOffset
+							hopCounter = hopLength
 						}
-
-						currentOffset += int64(len(buf))
 					}
 
-					lastTimestampWritten = ent.Timestamp
-					buf = buf[:0]
+					currentOffset += int64(len(buf))
 				}
 
-			case q := <- log.readChan:
-				//No entry will pass the filter.
-				if q.from >= q.to || q.minSeverity > q.maxSeverity {
-					close(q.result)
-				}
+				lastTimestampWritten = ent.Timestamp
+				buf = buf[:0]
+			}
 
-				lastEntryOffset := currentOffset - int64(prevPayloadLen - entryPayloadBase)
+		case q := <-log.readChan:
+			//No entry will pass the filter.
+			if q.from >= q.to || q.minSeverity > q.maxSeverity {
+				close(q.result)
+			}
 
-				atomic.AddInt32(readsCounter, 1)
-				go findAndReadEntries(file, lastEntryOffset, q, readsCounter)
+			lastEntryOffset := currentOffset - int64(prevPayloadLen+entryPayloadBase)
 
-			case cmd := <- log.closeChan:
-				for cnt := atomic.LoadInt32(readsCounter); cnt > 0; cnt = atomic.LoadInt32(readsCounter) {
-					time.Sleep(time.Millisecond * 100)
-				}
+			atomic.AddInt32(readsCounter, 1)
+			go findAndReadEntries(file, lastEntryOffset, q, readsCounter)
 
-				file.Close()
-				cmd.ack <- true
-				stop = true
+		case cmd := <-log.closeChan:
+			for cnt := atomic.LoadInt32(readsCounter); cnt > 0; cnt = atomic.LoadInt32(readsCounter) {
+				time.Sleep(time.Millisecond * 100)
+			}
+
+			file.Close()
+			cmd.ack <- true
+			stop = true
 		}
 	}
 }
@@ -481,7 +479,7 @@ func (log *LogFile) WriteLog(entry *LogEntry) {
 
 func (log *LogFile) ReadLog(from int64, to int64, minSeverity int, maxSeverity int, source string) chan *LogEntry {
 	result := make(chan *LogEntry)
-	q := &logQuery { from, to, minSeverity, maxSeverity, source, result}
+	q := &logQuery{from, to, minSeverity, maxSeverity, source, result}
 
 	log.readChan <- q
 
@@ -490,10 +488,10 @@ func (log *LogFile) ReadLog(from int64, to int64, minSeverity int, maxSeverity i
 
 func (log *LogFile) Close() {
 	ack := make(chan bool)
-	closeCmd := &logClose { ack }
+	closeCmd := &logClose{ack}
 
 	log.closeChan <- closeCmd
-	<- ack
+	<-ack
 
 	close(log.writeChan)
 	close(log.readChan)
