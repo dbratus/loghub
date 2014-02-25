@@ -328,7 +328,7 @@ func findAndReadEntries(file *os.File, lastEntryOffset int64, q *logQuery, reads
 	}
 }
 
-func initLogger(file *os.File) (lastTimestampWritten int64, prevPayloadLen int32, nextHopStartOffset int64, hopCounter int, initialized bool) {
+func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int32, nextHopStartOffset int64, hopCounter int, initialized bool) {
 	initialized = true
 	lastTimestampWritten = 0
 	prevPayloadLen = 0
@@ -415,7 +415,7 @@ func (log *LogFile) run(file *os.File) {
 	buf := make([]byte, 0, defaultEntryBufferSize)
 
 	stop := false
-	lastTimestampWritten, prevPayloadLen, nextHopStartOffset, hopCounter, initialized := initLogger(file)
+	lastTimestampWritten, prevPayloadLen, nextHopStartOffset, hopCounter, initialized := initLogFile(file)
 	currentOffset, _ := file.Seek(0, 1)
 	readsCounter := new(int32)
 
