@@ -30,22 +30,13 @@ const timestampLength = 8
 const entryHeaderLength = entryPayloadBase + timestampLength
 const hopLength = 64
 
-type logQuery struct {
-	from        int64
-	to          int64
-	minSeverity int
-	maxSeverity int
-	source      string
-	result      chan *LogEntry
-}
-
 type logClose struct {
 	ack chan bool
 }
 
 type LogFile struct {
 	writeChan chan *LogEntry
-	readChan  chan *logQuery
+	readChan  chan *LogQuery
 	closeChan chan *logClose
 }
 
@@ -65,9 +56,15 @@ func (h *entryHeader) PrevOffset() int64 {
 	return int64(h.prevPayloadLength) + int64(entryPayloadBase)
 }
 
-func OpenCreateLogFile(path string) (*LogFile, error) {
-	if f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0660); err == nil {
-		log := &LogFile{make(chan *LogEntry), make(chan *logQuery), make(chan *logClose)}
+func OpenLogFile(path string, create bool) (*LogFile, error) {
+	flags := os.O_RDWR
+
+	if create {
+		flags |= os.O_CREATE
+	}
+
+	if f, err := os.OpenFile(path, flags, 0660); err == nil {
+		log := &LogFile{make(chan *LogEntry), make(chan *LogQuery), make(chan *logClose)}
 
 		go log.run(f)
 
@@ -217,69 +214,69 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	return
 }
 
-func readEntries(file *os.File, q *logQuery, offset int64, lastEntryOffset int64) {
+func readEntries(file *os.File, q *LogQuery, offset int64, lastEntryOffset int64) {
 	for {
 		header, ok := readEntryHeader(file, offset)
 
 		if !ok {
-			close(q.result)
+			close(q.Result)
 			return
 		}
 
 		var srcRegexp *regexp.Regexp = nil
 		filterBySource := false
 
-		if q.source != "" {
+		if q.Source != "" {
 			filterBySource = true
 
-			if re, err := regexp.Compile(q.source); err == nil {
+			if re, err := regexp.Compile(q.Source); err == nil {
 				srcRegexp = re
 			}
 		}
 
-		if header.timestamp >= q.from && header.timestamp <= q.to {
+		if header.timestamp >= q.From && header.timestamp <= q.To {
 			if ent, ok := readEntry(file, offset); ok {
 				if (!filterBySource || (srcRegexp != nil && srcRegexp.MatchString(ent.Source))) &&
-					ent.Severity >= q.minSeverity &&
-					ent.Severity <= q.maxSeverity {
-					q.result <- ent
+					ent.Severity >= q.MinSeverity &&
+					ent.Severity <= q.MaxSeverity {
+					q.Result <- ent
 				}
 			} else {
-				close(q.result)
+				close(q.Result)
 				return
 			}
 		} else {
-			close(q.result)
+			close(q.Result)
 			return
 		}
 
 		if offset < lastEntryOffset {
 			offset += header.NextOffset()
 		} else {
-			close(q.result)
+			close(q.Result)
 			return
 		}
 	}
 }
 
-func findLeftBoundFromLeft(file *os.File, q *logQuery, offset int64, lastEntryOffset int64) {
+func findLeftBoundFromLeft(file *os.File, q *LogQuery, offset int64, lastEntryOffset int64) {
 
 	//Go right without hops.
 	for {
 		header, ok := readEntryHeader(file, offset)
 
 		if !ok {
-			close(q.result)
+			close(q.Result)
 			return
 		}
 
-		if header.timestamp >= q.from && header.timestamp <= q.to {
+		if header.timestamp >= q.From && header.timestamp <= q.To {
 			readEntries(file, q, offset, lastEntryOffset)
 			return
 		}
 
 		if offset == lastEntryOffset {
-			close(q.result)
+			close(q.Result)
 			return
 		}
 
@@ -291,7 +288,7 @@ func findLeftBoundFromLeft(file *os.File, q *logQuery, offset int64, lastEntryOf
 	}
 }
 
-func findAndReadEntries(file *os.File, lastEntryOffset int64, q *logQuery, readsCounter *int32) {
+func findAndReadEntries(file *os.File, lastEntryOffset int64, q *LogQuery, readsCounter *int32) {
 	defer atomic.AddInt32(readsCounter, -1)
 
 	offset := lastEntryOffset
@@ -301,21 +298,21 @@ func findAndReadEntries(file *os.File, lastEntryOffset int64, q *logQuery, reads
 		header, ok := readEntryHeader(file, offset)
 
 		if !ok {
-			close(q.result)
+			close(q.Result)
 			return
 		}
 
-		if header.timestamp < q.from {
+		if header.timestamp < q.From {
 			findLeftBoundFromLeft(file, q, offset, lastEntryOffset)
 			return
 		}
 
 		if offset == 0 {
-			if header.timestamp >= q.from && header.timestamp <= q.to {
+			if header.timestamp >= q.From && header.timestamp <= q.To {
 				readEntries(file, q, offset, lastEntryOffset)
 				return
 			} else {
-				close(q.result)
+				close(q.Result)
 				return
 			}
 		}
@@ -414,61 +411,80 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 func (log *LogFile) run(file *os.File) {
 	buf := make([]byte, 0, defaultEntryBufferSize)
 
-	stop := false
+	//TODO: Init on first write.
 	lastTimestampWritten, prevPayloadLen, nextHopStartOffset, hopCounter, initialized := initLogFile(file)
 	currentOffset, _ := file.Seek(0, 1)
 	readsCounter := new(int32)
 
-	for !stop {
-		select {
-		case ent := <-log.writeChan:
-			if initialized && ent.Timestamp >= lastTimestampWritten {
-				backHop := int32(0)
+	onWrite := func(ent *LogEntry) {
+		if initialized && ent.Timestamp >= lastTimestampWritten {
+			backHop := int32(0)
 
-				if hopCounter--; hopCounter == 0 {
-					backHop = int32(currentOffset - nextHopStartOffset)
-				}
+			if hopCounter--; hopCounter == 0 {
+				backHop = int32(currentOffset - nextHopStartOffset)
+			}
 
-				buf, prevPayloadLen = writeEntry(buf, ent, prevPayloadLen, backHop)
+			buf, prevPayloadLen = writeEntry(buf, ent, prevPayloadLen, backHop)
 
-				if _, err := file.Write(buf); err != nil {
-					println("Failed to wrtie log entry:", err.Error())
-					currentOffset, _ = file.Seek(0, 1)
+			if _, err := file.Write(buf); err != nil {
+				println("Failed to wrtie log entry:", err.Error())
+				currentOffset, _ = file.Seek(0, 1)
 
-				} else {
-					if hopCounter == 0 {
-						if writeHop(file, currentOffset, nextHopStartOffset) {
-							nextHopStartOffset = currentOffset
-							hopCounter = hopLength
-						}
+			} else {
+				if hopCounter == 0 {
+					if writeHop(file, currentOffset, nextHopStartOffset) {
+						nextHopStartOffset = currentOffset
+						hopCounter = hopLength
 					}
-
-					currentOffset += int64(len(buf))
 				}
 
-				lastTimestampWritten = ent.Timestamp
-				buf = buf[:0]
+				currentOffset += int64(len(buf))
 			}
 
-		case q := <-log.readChan:
-			//No entry will pass the filter.
-			if q.from >= q.to || q.minSeverity > q.maxSeverity {
-				close(q.result)
+			lastTimestampWritten = ent.Timestamp
+			buf = buf[:0]
+		}
+	}
+
+	onRead := func(q *LogQuery) {
+		if q.From >= q.To || q.MinSeverity > q.MaxSeverity {
+			close(q.Result)
+		}
+
+		lastEntryOffset := currentOffset - int64(prevPayloadLen+entryPayloadBase)
+
+		atomic.AddInt32(readsCounter, 1)
+		go findAndReadEntries(file, lastEntryOffset, q, readsCounter)
+	}
+
+	for run := true; run; {
+		select {
+		case ent, ok := <-log.writeChan:
+			if ok {
+				onWrite(ent)
 			}
 
-			lastEntryOffset := currentOffset - int64(prevPayloadLen+entryPayloadBase)
-
-			atomic.AddInt32(readsCounter, 1)
-			go findAndReadEntries(file, lastEntryOffset, q, readsCounter)
+		case q, ok := <-log.readChan:
+			if ok {
+				onRead(q)
+			}
 
 		case cmd := <-log.closeChan:
+			for ent := range log.writeChan {
+				onWrite(ent)
+			}
+
+			for q := range log.readChan {
+				onRead(q)
+			}
+
 			for cnt := atomic.LoadInt32(readsCounter); cnt > 0; cnt = atomic.LoadInt32(readsCounter) {
 				time.Sleep(time.Millisecond * 100)
 			}
 
 			file.Close()
 			cmd.ack <- true
-			stop = true
+			run = false
 		}
 	}
 }
@@ -477,23 +493,19 @@ func (log *LogFile) WriteLog(entry *LogEntry) {
 	log.writeChan <- entry
 }
 
-func (log *LogFile) ReadLog(from int64, to int64, minSeverity int, maxSeverity int, source string) chan *LogEntry {
-	result := make(chan *LogEntry)
-	q := &logQuery{from, to, minSeverity, maxSeverity, source, result}
-
+func (log *LogFile) ReadLog(q *LogQuery) {
 	log.readChan <- q
-
-	return result
 }
 
 func (log *LogFile) Close() {
+	close(log.writeChan)
+	close(log.readChan)
+
 	ack := make(chan bool)
 	closeCmd := &logClose{ack}
 
 	log.closeChan <- closeCmd
 	<-ack
 
-	close(log.writeChan)
-	close(log.readChan)
 	close(log.closeChan)
 }

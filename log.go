@@ -29,7 +29,16 @@ type LogEntry struct {
 	Message   []byte
 }
 
+type LogQuery struct {
+	From        int64
+	To          int64
+	MinSeverity int
+	MaxSeverity int
+	Source      string
+	Result      chan *LogEntry
+}
+
 type Logger interface {
 	WriteLog(*LogEntry)
-	ReadLog(from int64, to int64, minSeverity int, maxSeverity int, source string) chan *LogEntry
+	ReadLog(*LogQuery)
 }
