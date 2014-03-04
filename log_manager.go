@@ -34,6 +34,7 @@ type LogManagerStat struct {
 type LogManager interface {
 	Logger
 
+	Close()
 	Stat() *LogManagerStat
 }
 
@@ -61,6 +62,7 @@ func (mg *defaultLogManager) ReadLog(q *LogQuery) {
 }
 
 func (mg *defaultLogManager) Stat() *LogManagerStat {
+	//TODO: Implement.
 	return nil
 }
 
@@ -93,6 +95,7 @@ func getLogFileNameForEntry(entry *LogEntry) string {
 func initLogManager() (logSources map[string]bool, initialized bool) {
 	initialized = false
 	logSources = make(map[string]bool, 0)
+	//TODO: Implement.
 	return
 }
 
@@ -208,6 +211,8 @@ func (mg *defaultLogManager) run() {
 			} else {
 				close(q.Result)
 			}
+		} else {
+			close(q.Result)
 		}
 	}
 

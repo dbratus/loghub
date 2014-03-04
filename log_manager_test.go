@@ -17,6 +17,99 @@
 package main
 
 import (
-//"testing"
-//"time"
+	"os"
+	"testing"
+	"time"
 )
+
+func getTestLogHome() string {
+	return os.TempDir() + "/loghub.test.home"
+}
+
+func makeTestLogHome() {
+	homePath := getTestLogHome()
+
+	//println(homePath)
+
+	if stat, err := os.Stat(homePath); err != nil {
+		if os.IsNotExist(err) {
+			if e := os.Mkdir(homePath, 0666); e != nil {
+				panic(e.Error())
+			}
+		} else {
+			panic(err.Error())
+		}
+	} else if !stat.IsDir() {
+		panic(homePath + " already exists and its not a directory.")
+	}
+}
+
+func deleteTestLogHome() {
+	homePath := getTestLogHome()
+	os.RemoveAll(homePath)
+}
+
+func TestWriteReadLog(t *testing.T) {
+	makeTestLogHome()
+	defer deleteTestLogHome()
+
+	sources := [...]string{ "src1", "src2", "src3" }
+
+	entriesPerSource := 10
+	logManager := NewDefaultLogManager(getTestLogHome())
+	beforeWrite := time.Now()
+
+	for i := 0; i < entriesPerSource; i++ {
+		for _, src := range sources {
+			ent := &LogEntry{0, 1, src, EncodingPlain, []byte("Message")}
+
+			logManager.WriteLog(ent)
+		}
+	}
+	
+	logManager.Close()
+	afterWrite := time.Now()
+
+	logManager = NewDefaultLogManager(getTestLogHome())
+
+	qResult := make(chan *LogEntry)
+	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src1", qResult})
+	entCnt := 0
+
+	for _ = range qResult {
+		entCnt++
+	}
+
+	if entCnt < entriesPerSource {
+		t.Errorf("Failed to read entries from log manager: expected %d, got %d.", entriesPerSource, entCnt)
+		t.FailNow()
+	}
+
+	for i := 0; i < entriesPerSource; i++ {
+		for _, src := range sources {
+			ent := &LogEntry{0, 1, src, EncodingPlain, []byte("Message")}
+
+			logManager.WriteLog(ent)
+		}
+	}
+
+	logManager.Close()
+
+	afterWrite = time.Now()
+
+	logManager = NewDefaultLogManager(getTestLogHome())
+	qResult = make(chan *LogEntry)
+	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src1", qResult})
+	entCnt = 0
+
+	for _ = range qResult {
+		entCnt++
+	}
+
+	if entCnt < entriesPerSource*2 {
+		t.Errorf("Failed to read entries from log manager: expected %d, got %d.", entriesPerSource*2, entCnt)
+		t.FailNow()
+	}
+
+	logManager.Close()
+}
