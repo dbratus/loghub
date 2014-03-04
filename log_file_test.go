@@ -23,7 +23,7 @@ import (
 )
 
 func TestWriteReadLogFile(t *testing.T) {
-	testLogFilePath := os.TempDir() + "/loghub.test.log"
+	testLogFilePath := os.TempDir() + "loghub.test.log"
 
 	//println(testLogFilePath)
 

@@ -23,7 +23,7 @@ import (
 )
 
 func getTestLogHome() string {
-	return os.TempDir() + "/loghub.test.home"
+	return os.TempDir() + "loghub.test.home"
 }
 
 func makeTestLogHome() {
@@ -33,7 +33,7 @@ func makeTestLogHome() {
 
 	if stat, err := os.Stat(homePath); err != nil {
 		if os.IsNotExist(err) {
-			if e := os.Mkdir(homePath, 0666); e != nil {
+			if e := os.Mkdir(homePath, 0777); e != nil {
 				panic(e.Error())
 			}
 		} else {
@@ -41,6 +41,12 @@ func makeTestLogHome() {
 		}
 	} else if !stat.IsDir() {
 		panic(homePath + " already exists and its not a directory.")
+	} else {
+		os.RemoveAll(homePath)
+
+		if e := os.Mkdir(homePath, 0777); e != nil {
+			panic(e.Error())
+		}
 	}
 }
 
@@ -73,14 +79,14 @@ func TestWriteReadLog(t *testing.T) {
 	logManager = NewDefaultLogManager(getTestLogHome())
 
 	qResult := make(chan *LogEntry)
-	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src1", qResult})
+	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src.", qResult})
 	entCnt := 0
 
 	for _ = range qResult {
 		entCnt++
 	}
 
-	if entCnt < entriesPerSource {
+	if entCnt < entriesPerSource*3 {
 		t.Errorf("Failed to read entries from log manager: expected %d, got %d.", entriesPerSource, entCnt)
 		t.FailNow()
 	}
@@ -99,15 +105,15 @@ func TestWriteReadLog(t *testing.T) {
 
 	logManager = NewDefaultLogManager(getTestLogHome())
 	qResult = make(chan *LogEntry)
-	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src1", qResult})
+	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src.", qResult})
 	entCnt = 0
 
 	for _ = range qResult {
 		entCnt++
 	}
 
-	if entCnt < entriesPerSource*2 {
-		t.Errorf("Failed to read entries from log manager: expected %d, got %d.", entriesPerSource*2, entCnt)
+	if entCnt < entriesPerSource*3*2 {
+		t.Errorf("Failed to read entries from log manager: expected %d, got %d.", entriesPerSource*3*2, entCnt)
 		t.FailNow()
 	}
 

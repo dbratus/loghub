@@ -22,6 +22,9 @@ import (
 	"regexp"
 	"time"
 	"sync/atomic"
+	"os"
+	"strings"
+	"errors"
 )
 
 var logFileCloseDelay = time.Second * 10
@@ -83,6 +86,14 @@ func getSourceDirName(source string) string {
 	return base64.URLEncoding.EncodeToString([]byte(source))
 }
 
+func getSourceNameByDir(dir string) (string, error) {
+	if name, err := base64.URLEncoding.DecodeString(dir); err == nil {
+		return string(name), nil
+	} else {
+		return "", err
+	}
+}
+
 func getFileNameForTimestamp(timestamp int64) string {
 	t := time.Unix(0, timestamp)
 	return fmt.Sprintf("%d.%d.%d.%d", t.Year(), int(t.Month()), t.Day(), t.Hour())
@@ -92,27 +103,44 @@ func getLogFileNameForEntry(entry *LogEntry) string {
 	return getSourceDirName(entry.Source) + "/" + getFileNameForTimestamp(entry.Timestamp)
 }
 
-func initLogManager() (logSources map[string]bool, initialized bool) {
+func initLogManager(home string) (logSources map[string]bool, initialized bool) {
 	initialized = false
 	logSources = make(map[string]bool, 0)
-	//TODO: Implement.
+	
+	if homeDir, err := os.Open(home); err == nil {
+		if dirnames, err := homeDir.Readdirnames(0); err == nil {
+			for _, dir := range dirnames {
+				if src, err := getSourceNameByDir(dir); err == nil {
+					logSources[src] = true
+				}
+			}
+
+			initialized = true
+		} else {
+			println("Failed to initialize log manager:", err.Error())
+		}
+	} else {
+		println("Failed to initialize log manager:", err.Error())
+	}
+
 	return
 }
 
 func getLogFileNamesForRange(sources []string, minTimestamp int64, maxTimestamp int64, fileNames chan string) {
-	day := time.Hour * 24
-	minDay := time.Unix(0, minTimestamp).Truncate(day).UnixNano()
-	maxDay := time.Unix(0, maxTimestamp).Truncate(day).UnixNano()
+	minHour := time.Unix(0, minTimestamp).Truncate(time.Hour).UnixNano()
+	maxHour := time.Unix(0, maxTimestamp).Truncate(time.Hour).UnixNano()
 
 	for _, src := range sources {
-		for curTs := minDay; curTs <= maxDay; curTs += int64(day) {
+		for curTs := minHour; curTs <= maxHour; curTs += int64(time.Hour) {
 			fileNames <- getSourceDirName(src) + "/" + getFileNameForTimestamp(curTs)
 		}
 	}
+
+	close(fileNames)
 }
 
 func (mg *defaultLogManager) run() {
-	logSources, initialized := initLogManager()
+	logSources, initialized := initLogManager(mg.home)
 	openLogFiles := make(map[string]*LogFile)
 	closeLogFileChan := make(chan string)
 	closeLogFileChanClosed := new(int32)
@@ -127,6 +155,22 @@ func (mg *defaultLogManager) run() {
 
 	getLogFile := func(fileName string, create bool) (*LogFile, error) {
 		if logFile, found := openLogFiles[fileName]; !found {
+			srcDir := mg.home + "/" + fileName[0:strings.LastIndex(fileName, "/")]
+
+			if srcDirStat, err := os.Stat(srcDir); err != nil {
+				if os.IsNotExist(err) && create {
+					if err = os.Mkdir(srcDir, 0777); err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, err
+				}
+			} else {
+				if !srcDirStat.IsDir() {
+					return nil, errors.New("Source directory " + srcDir + " is not a directory")
+				}
+			}
+
 			if logFile, err := OpenLogFile(mg.home + "/" + fileName, create); err == nil {
 				openLogFiles[fileName] = logFile
 
@@ -162,6 +206,10 @@ func (mg *defaultLogManager) run() {
 					go MergeLogs(results, subQuery.Result, merged)
 					results = merged
 				}
+			} else {
+				if !os.IsNotExist(err) {
+					println("Failed to get log file:", err.Error())
+				}
 			}
 		}
 
@@ -178,8 +226,10 @@ func (mg *defaultLogManager) run() {
 
 	onWrite := func(ent *LogEntry) {
 		if initialized {
-			if logFile, err := getLogFile(getLogFileNameForEntry(ent), true); err == nil {
-				ent.Timestamp = time.Now().UnixNano()
+			ent.Timestamp = time.Now().UnixNano()
+			logFileToWrite := getLogFileNameForEntry(ent)
+
+			if logFile, err := getLogFile(logFileToWrite, true); err == nil {
 				logFile.WriteLog(ent)
 				logSources[ent.Source] = true
 			} else {
