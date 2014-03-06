@@ -102,3 +102,10 @@ type LogQueryJSON struct {
 	MaxSev int
 	Src    string
 }
+
+//The interface which a protocol message handler must implement.
+type MessageHandler interface {
+	HandleWrite(chan *IncomingLogEntryJSON)
+	HandleRead(chan *LogQueryJSON, chan *OutgoingLogEntryJSON)
+	HandleInternalRead(chan *LogQueryJSON, chan *InternalLogEntryJSON)
+}
