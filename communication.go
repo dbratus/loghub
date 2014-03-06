@@ -108,4 +108,5 @@ type MessageHandler interface {
 	HandleWrite(chan *IncomingLogEntryJSON)
 	HandleRead(chan *LogQueryJSON, chan *OutgoingLogEntryJSON)
 	HandleInternalRead(chan *LogQueryJSON, chan *InternalLogEntryJSON)
+	Close()
 }
