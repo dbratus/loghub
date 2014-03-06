@@ -18,13 +18,13 @@ package main
 
 import (
 	"encoding/base64"
-	"fmt"
-	"regexp"
-	"time"
-	"sync/atomic"
-	"os"
-	"strings"
 	"errors"
+	"fmt"
+	"os"
+	"regexp"
+	"strings"
+	"sync/atomic"
+	"time"
 )
 
 var logFileCloseDelay = time.Second * 10
@@ -106,7 +106,7 @@ func getLogFileNameForEntry(entry *LogEntry) string {
 func initLogManager(home string) (logSources map[string]bool, initialized bool) {
 	initialized = false
 	logSources = make(map[string]bool, 0)
-	
+
 	if homeDir, err := os.Open(home); err == nil {
 		if dirnames, err := homeDir.Readdirnames(0); err == nil {
 			for _, dir := range dirnames {
@@ -171,7 +171,7 @@ func (mg *defaultLogManager) run() {
 				}
 			}
 
-			if logFile, err := OpenLogFile(mg.home + "/" + fileName, create); err == nil {
+			if logFile, err := OpenLogFile(mg.home+"/"+fileName, create); err == nil {
 				openLogFiles[fileName] = logFile
 
 				go waitAndCloseFile(fileName)

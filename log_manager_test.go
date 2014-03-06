@@ -59,7 +59,7 @@ func TestWriteReadLog(t *testing.T) {
 	makeTestLogHome()
 	defer deleteTestLogHome()
 
-	sources := [...]string{ "src1", "src2", "src3" }
+	sources := [...]string{"src1", "src2", "src3"}
 
 	entriesPerSource := 10
 	logManager := NewDefaultLogManager(getTestLogHome())
@@ -72,7 +72,7 @@ func TestWriteReadLog(t *testing.T) {
 			logManager.WriteLog(ent)
 		}
 	}
-	
+
 	logManager.Close()
 	afterWrite := time.Now()
 

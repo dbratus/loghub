@@ -31,7 +31,7 @@ func TestMergeLogs(t *testing.T) {
 
 		close(log)
 	}
-	
+
 	checkMergedSorted := func(merged []*LogEntry) {
 		for i := 1; i < len(merged); i++ {
 			for j := 0; j < i; j++ {

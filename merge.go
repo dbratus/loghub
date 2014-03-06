@@ -21,7 +21,7 @@ func MergeLogs(leftIn chan *LogEntry, rightIn chan *LogEntry, out chan *LogEntry
 
 	for {
 		if left == nil {
-			if l, ok := <- leftIn; !ok {
+			if l, ok := <-leftIn; !ok {
 				if right != nil {
 					out <- right
 				}
@@ -38,11 +38,11 @@ func MergeLogs(leftIn chan *LogEntry, rightIn chan *LogEntry, out chan *LogEntry
 		}
 
 		if right == nil {
-			if r, ok := <- rightIn; !ok {
+			if r, ok := <-rightIn; !ok {
 				if left != nil {
 					out <- left
 				}
-				
+
 				for ent := range leftIn {
 					out <- ent
 				}
