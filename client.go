@@ -63,57 +63,60 @@ func (cli *logHubClient) connPool() {
 		println("Failed to connect to", cli.address, ":", err.Error())
 	}
 
-	select {
-	case connChan, ok := <-cli.getConnChan:
-		if ok {
-			if connections.Len() > 0 {
-				connChan <- connections.Remove(connections.Front()).(net.Conn)
-			} else {
-				if totalConnections < cli.connPoolSize {
-					if conn, err := net.Dial("tcp", cli.address); err == nil {
-						connChan <- conn
-						totalConnections++
-					} else {
-						println("Failed to connect to", cli.address, ":", err.Error())
-						close(connChan)
-					}
+	for {
+		select {
+		case connChan, ok := <-cli.getConnChan:
+			if ok {
+				if connections.Len() > 0 {
+					connChan <- connections.Remove(connections.Front()).(net.Conn)
 				} else {
-					waiters.PushBack(connChan)
+					if totalConnections < cli.connPoolSize {
+						if conn, err := net.Dial("tcp", cli.address); err == nil {
+							connChan <- conn
+							totalConnections++
+						} else {
+							println("Failed to connect to", cli.address, ":", err.Error())
+							close(connChan)
+						}
+					} else {
+						waiters.PushBack(connChan)
+					}
 				}
 			}
-		}
-	case conn, ok := <-cli.putConnChan:
-		if ok {
-			if waiters.Len() == 0 {
-				connections.PushBack(conn)
-			} else {
-				connChan := waiters.Remove(waiters.Front()).(chan net.Conn)
-				connChan <- conn
+		case conn, ok := <-cli.putConnChan:
+			if ok {
+				if waiters.Len() == 0 {
+					connections.PushBack(conn)
+				} else {
+					connChan := waiters.Remove(waiters.Front()).(chan net.Conn)
+					connChan <- conn
+				}
 			}
-		}
-	case conn, ok := <-cli.brokenConnChan:
-		if ok {
-			conn.Close()
-			totalConnections--
-		}
-	case ack := <-cli.closeChan:
-		for connChan := range cli.getConnChan {
-			close(connChan)
-		}
+		case conn, ok := <-cli.brokenConnChan:
+			if ok {
+				conn.Close()
+				totalConnections--
+			}
+		case ack := <-cli.closeChan:
+			for connChan := range cli.getConnChan {
+				close(connChan)
+			}
 
-		for conn := range cli.putConnChan {
-			conn.Close()
-		}
+			for conn := range cli.putConnChan {
+				conn.Close()
+			}
 
-		for conn := range cli.brokenConnChan {
-			conn.Close()
-		}
+			for conn := range cli.brokenConnChan {
+				conn.Close()
+			}
 
-		for conn := connections.Front(); conn != nil; conn = conn.Next() {
-			conn.Value.(net.Conn).Close()
-		}
+			for conn := connections.Front(); conn != nil; conn = conn.Next() {
+				conn.Value.(net.Conn).Close()
+			}
 
-		ack <- true
+			ack <- true
+			return
+		}
 	}
 }
 
