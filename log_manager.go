@@ -181,6 +181,7 @@ func (mg *defaultLogManager) run() {
 				return nil, err
 			}
 		} else {
+			//TODO: Prolongate log file timeout on access.
 			return logFile, nil
 		}
 	}
@@ -275,6 +276,7 @@ func (mg *defaultLogManager) run() {
 
 		case logFileToClose, ok := <-closeLogFileChan:
 			if ok {
+				//TODO: Prolongate log file timeout on access.
 				if logFile, found := openLogFiles[logFileToClose]; found {
 					logFile.Close()
 				}
