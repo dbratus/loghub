@@ -187,3 +187,46 @@ func TestClientServer(t *testing.T) {
 		t.FailNow()
 	}
 }
+
+func TestClientWithoutServer(t *testing.T) {
+	client := NewLogHubClient(":9999", 1)
+
+	entriesToWrite := make(chan *IncomingLogEntryJSON)
+	client.Write(entriesToWrite)
+
+	for i := 0; i < testLogEntriesCount; i++ {
+		m := &IncomingLogEntryJSON{1, "Source", "Message"}
+
+		entriesToWrite <- m
+	}
+
+	close(entriesToWrite)
+
+	queries := make(chan *LogQueryJSON)
+	result := make(chan *OutgoingLogEntryJSON)
+
+	client.Read(queries, result)
+
+	for i := 0; i < testLogQueriesCount; i++ {
+		queries <- new(LogQueryJSON)
+	}
+
+	close(queries)
+
+	PurgeOutgoingLogEntryJSON(result)
+
+	queries = make(chan *LogQueryJSON)
+	resultInternal := make(chan *InternalLogEntryJSON)
+
+	client.InternalRead(queries, resultInternal)
+
+	for i := 0; i < testLogQueriesCount; i++ {
+		queries <- new(LogQueryJSON)
+	}
+
+	close(queries)
+
+	PurgeInternalLogEntryJSON(resultInternal)
+
+	client.Close()
+}

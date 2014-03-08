@@ -138,8 +138,7 @@ func (cli *logHubClient) Write(entries chan *IncomingLogEntryJSON) {
 
 	if c, ok := cli.getConn(); !ok {
 		atomic.AddInt32(cli.activeOps, -1)
-		for _ = range entries {
-		}
+		go PurgeIncomingLogEntryJSON(entries)
 		return
 	} else {
 		conn = c
@@ -188,8 +187,7 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 
 	if c, ok := cli.getConn(); !ok {
 		atomic.AddInt32(cli.activeOps, -1)
-		for _ = range queries {
-		}
+		go PurgeLogQueryJSON(queries)
 		close(entries)
 		return
 	} else {
@@ -260,8 +258,7 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 
 	if c, ok := cli.getConn(); !ok {
 		atomic.AddInt32(cli.activeOps, -1)
-		for _ = range queries {
-		}
+		go PurgeLogQueryJSON(queries)
 		close(entries)
 		return
 	} else {
