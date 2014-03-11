@@ -58,7 +58,7 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 			case ActionWrite:
 				entChan := make(chan *IncomingLogEntryJSON)
 
-				go handler.HandleWrite(entChan)
+				go handler.Write(entChan)
 
 				for {
 					ent := new(IncomingLogEntryJSON)
@@ -80,7 +80,7 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 				qChan := make(chan *LogQueryJSON)
 				entChan := make(chan *OutgoingLogEntryJSON)
 
-				go handler.HandleRead(qChan, entChan)
+				go handler.Read(qChan, entChan)
 
 				if !readLogQueryJSONChannel(reader, handler, qChan) {
 					conn.Close()
@@ -106,7 +106,7 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 				qChan := make(chan *LogQueryJSON)
 				entChan := make(chan *InternalLogEntryJSON)
 
-				go handler.HandleInternalRead(qChan, entChan)
+				go handler.InternalRead(qChan, entChan)
 
 				if !readLogQueryJSONChannel(reader, handler, qChan) {
 					conn.Close()

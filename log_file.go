@@ -21,7 +21,7 @@ import (
 	"os"
 	"regexp"
 	"sync/atomic"
-	"time"
+	"runtime"
 )
 
 const defaultEntryBufferSize = 1024
@@ -479,7 +479,7 @@ func (log *LogFile) run(file *os.File) {
 			}
 
 			for cnt := atomic.LoadInt32(readsCounter); cnt > 0; cnt = atomic.LoadInt32(readsCounter) {
-				time.Sleep(time.Millisecond * 100)
+				runtime.Gosched()
 			}
 
 			file.Close()
