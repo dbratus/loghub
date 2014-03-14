@@ -16,10 +16,17 @@
 */
 package main
 
+import (
+	"bytes"
+	"compress/flate"
+)
+
 const (
 	EncodingPlain   = 0
 	EncodingDeflate = 1
 )
+
+const PlainMessageMaxLength = 512
 
 type LogEntry struct {
 	Timestamp int64
@@ -41,4 +48,41 @@ type LogQuery struct {
 type Logger interface {
 	WriteLog(*LogEntry)
 	ReadLog(*LogQuery)
+}
+
+func EncodeMessage(msg string) ([]byte, int) {
+	if len(msg) > PlainMessageMaxLength {
+		buf := new(bytes.Buffer)
+
+		if compressor, err := flate.NewWriter(buf, flate.DefaultCompression); err == nil {
+			compressor.Write([]byte(msg))
+			compressor.Flush()
+
+			return buf.Bytes(), EncodingDeflate
+		} else {
+			return []byte(msg), EncodingPlain
+		}
+	} else {
+		return []byte(msg), EncodingPlain
+	}
+}
+
+func DecodeMessage(msg []byte, encoding int) string {
+	if encoding == EncodingDeflate {
+		reader := flate.NewReader(bytes.NewBuffer(msg))
+		buf := make([]byte, PlainMessageMaxLength)
+		result := new(bytes.Buffer)
+
+		for {
+			n, _ := reader.Read(buf)
+
+			result.Write(buf[:n])
+
+			if n < len(buf) {
+				return string(result.Bytes())
+			}
+		}
+	} else {
+		return string(msg)
+	}
 }

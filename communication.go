@@ -16,6 +16,10 @@
 */
 package main
 
+import (
+	"encoding/base64"
+)
+
 /*
 This file describes the data structures of the LogHub communication protocol.
 These structures are directly marshalled to JSON.
@@ -109,4 +113,64 @@ type MessageHandler interface {
 	Read(chan *LogQueryJSON, chan *OutgoingLogEntryJSON)
 	InternalRead(chan *LogQueryJSON, chan *InternalLogEntryJSON)
 	Close()
+}
+
+func IncomingLogEntryJSONToLogEntry(in *IncomingLogEntryJSON) *LogEntry {
+	ent := new(LogEntry)
+
+	ent.Severity = in.Sev
+	ent.Source = in.Src
+
+	ent.Message, ent.Encoding = EncodeMessage(in.Msg)
+
+	return ent
+}
+
+func LogEntryToOutgoingLogEntryJSON(in *LogEntry) *OutgoingLogEntryJSON {
+	return &OutgoingLogEntryJSON{
+		IncomingLogEntryJSON{
+			in.Severity,
+			in.Source,
+			DecodeMessage(in.Message, in.Encoding),
+		},
+		in.Timestamp,
+	}
+}
+
+func LogEntryToInternalLogEntryJSON(in *LogEntry) *InternalLogEntryJSON {
+	var msg string
+
+	if in.Encoding == EncodingDeflate {
+		msg = base64.StdEncoding.EncodeToString(in.Message)
+	} else {
+		msg = string(in.Message)
+	}
+
+	return &InternalLogEntryJSON{
+		in.Severity,
+		in.Source,
+		in.Encoding,
+		msg,
+		in.Timestamp,
+	}
+}
+
+func InternalLogEntryJSONToLogEntry(in *InternalLogEntryJSON) *LogEntry {
+	var msg []byte
+
+	if in.Enc == EncodingDeflate {
+		if m, err := base64.StdEncoding.DecodeString(in.Msg); err == nil {
+			msg = m
+		} else {
+			msg = []byte{}
+		}
+	} else {
+		msg = []byte(in.Msg)
+	}
+
+	return &LogEntry{in.Ts, in.Sev, in.Src, in.Enc, msg}
+}
+
+func LogQueryJSONToLogQuery(in *LogQueryJSON) *LogQuery {
+	return &LogQuery{in.From, in.To, in.MinSev, in.MaxSev, in.Src, nil}
 }
