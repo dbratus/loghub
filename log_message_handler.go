@@ -30,12 +30,50 @@ func (mh *logMessageHandler) Write(entries chan *IncomingLogEntryJSON) {
 	}
 }
 
-func (mh *logMessageHandler) Read(chan *LogQueryJSON, chan *OutgoingLogEntryJSON) {
-	//TODO: Implement.
+func (mh *logMessageHandler) queryMultiple(queries chan *LogQueryJSON) chan *LogEntry {
+	var results chan *LogEntry = nil
+
+	for qJSON := range queries {
+		q := LogQueryJSONToLogQuery(qJSON)
+
+		if results == nil {
+			results = make(chan *LogEntry)
+			q.Result = results
+		} else {
+			q.Result = make(chan *LogEntry)
+			mergedResults := make(chan *LogEntry)
+			go MergeLogs(results, q.Result, mergedResults)
+			results = mergedResults
+		}
+
+		mh.logManager.ReadLog(q)
+	}
+
+	return results
 }
 
-func (mh *logMessageHandler) InternalRead(chan *LogQueryJSON, chan *InternalLogEntryJSON) {
-	//TODO: Implement.
+func (mh *logMessageHandler) Read(queries chan *LogQueryJSON, resultJSON chan *OutgoingLogEntryJSON) {
+	result := mh.queryMultiple(queries)
+
+	if result != nil {
+		for ent := range result {
+			resultJSON <- LogEntryToOutgoingLogEntryJSON(ent)
+		}
+	}
+
+	close(resultJSON)
+}
+
+func (mh *logMessageHandler) InternalRead(queries chan *LogQueryJSON, resultJSON chan *InternalLogEntryJSON) {
+	result := mh.queryMultiple(queries)
+
+	if result != nil {
+		for ent := range result {
+			resultJSON <- LogEntryToInternalLogEntryJSON(ent)
+		}
+	}
+
+	close(resultJSON)
 }
 
 func (mh *logMessageHandler) Close() {
