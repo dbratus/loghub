@@ -27,29 +27,18 @@ import (
 	"time"
 )
 
-var logFileCloseDelay = time.Second * 10
-
-type LogManagerStat struct {
-	Capacity int64
-	Size     int64
-}
-
-type LogManager interface {
-	Logger
-
-	Close()
-	Stat() *LogManagerStat
-}
+var logFileCloseDelay = time.Second * 30
 
 type defaultLogManager struct {
 	home      string
 	writeChan chan *LogEntry
 	readChan  chan *LogQuery
+	sizeChan  chan chan int64
 	closeChan chan *logClose
 }
 
 func NewDefaultLogManager(home string) LogManager {
-	var mg = &defaultLogManager{home, make(chan *LogEntry), make(chan *LogQuery), make(chan *logClose)}
+	var mg = &defaultLogManager{home, make(chan *LogEntry), make(chan *LogQuery), make(chan chan int64), make(chan *logClose)}
 
 	go mg.run()
 
@@ -64,14 +53,16 @@ func (mg *defaultLogManager) ReadLog(q *LogQuery) {
 	mg.readChan <- q
 }
 
-func (mg *defaultLogManager) Stat() *LogManagerStat {
-	//TODO: Implement.
-	return nil
+func (mg *defaultLogManager) Size() int64 {
+	result := make(chan int64)
+	mg.sizeChan <- result
+	return <-result
 }
 
 func (mg *defaultLogManager) Close() {
 	close(mg.writeChan)
 	close(mg.readChan)
+	close(mg.sizeChan)
 
 	ack := make(chan bool)
 	closeCmd := &logClose{ack}
@@ -103,24 +94,46 @@ func getLogFileNameForEntry(entry *LogEntry) string {
 	return getSourceDirName(entry.Source) + "/" + getFileNameForTimestamp(entry.Timestamp)
 }
 
-func initLogManager(home string) (logSources map[string]bool, initialized bool) {
-	initialized = false
+func initLogManager(home string) (logSources map[string]bool, size int64, initialized bool) {
+	initialized = true
 	logSources = make(map[string]bool, 0)
+	size = 0
 
 	if homeDir, err := os.Open(home); err == nil {
+		defer homeDir.Close()
+
 		if dirnames, err := homeDir.Readdirnames(0); err == nil {
 			for _, dir := range dirnames {
 				if src, err := getSourceNameByDir(dir); err == nil {
 					logSources[src] = true
 				}
-			}
 
-			initialized = true
+				if srcDir, err := os.Open(home + "/" + dir); err == nil {
+					defer srcDir.Close()
+
+					if logFiles, err := srcDir.Readdir(0); err == nil {
+						for _, logFile := range logFiles {
+							size += logFile.Size()
+						}
+					} else {
+						println("Failed to initialize log manager:", err.Error())
+						initialized = false
+						return
+					}
+
+				} else {
+					println("Failed to initialize log manager:", err.Error())
+					initialized = false
+					return
+				}
+			}
 		} else {
 			println("Failed to initialize log manager:", err.Error())
+			initialized = false
 		}
 	} else {
 		println("Failed to initialize log manager:", err.Error())
+		initialized = false
 	}
 
 	return
@@ -140,8 +153,8 @@ func getLogFileNamesForRange(sources []string, minTimestamp int64, maxTimestamp 
 }
 
 func (mg *defaultLogManager) run() {
-	logSources, initialized := initLogManager(mg.home)
-	openLogFiles := make(map[string]*LogFile)
+	logSources, closedSize, initialized := initLogManager(mg.home)
+	openLogFiles := make(map[string]LogManager)
 	closeLogFileChan := make(chan string)
 	closeLogFileChanClosed := new(int32)
 
@@ -153,7 +166,7 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
-	getLogFile := func(fileName string, create bool) (*LogFile, error) {
+	getLogFile := func(fileName string, create bool) (LogManager, error) {
 		if logFile, found := openLogFiles[fileName]; !found {
 			srcDir := mg.home + "/" + fileName[0:strings.LastIndex(fileName, "/")]
 
@@ -173,6 +186,7 @@ func (mg *defaultLogManager) run() {
 
 			if logFile, err := OpenLogFile(mg.home+"/"+fileName, create); err == nil {
 				openLogFiles[fileName] = logFile
+				closedSize -= logFile.Size()
 
 				go waitAndCloseFile(fileName)
 
@@ -267,6 +281,26 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
+	onSize := func(sz chan int64) {
+		size := closedSize
+
+		for _, logFile := range openLogFiles {
+			size += logFile.Size()
+		}
+
+		sz <- size
+		close(sz)
+	}
+
+	onClose := func(logFileToClose string) {
+		//TODO: Prolongate log file timeout on access.
+		if logFile, found := openLogFiles[logFileToClose]; found {
+			closedSize += logFile.Size()
+			logFile.Close()
+			delete(openLogFiles, logFileToClose)
+		}
+	}
+
 	for run := true; run; {
 		select {
 		case ent, ok := <-mg.writeChan:
@@ -276,16 +310,17 @@ func (mg *defaultLogManager) run() {
 
 		case logFileToClose, ok := <-closeLogFileChan:
 			if ok {
-				//TODO: Prolongate log file timeout on access.
-				if logFile, found := openLogFiles[logFileToClose]; found {
-					logFile.Close()
-					delete(openLogFiles, logFileToClose)
-				}
+				onClose(logFileToClose)
 			}
 
 		case q, ok := <-mg.readChan:
 			if ok {
 				onRead(q)
+			}
+
+		case sz, ok := <-mg.sizeChan:
+			if ok {
+				onSize(sz)
 			}
 
 		case cmd := <-mg.closeChan:
@@ -295,6 +330,10 @@ func (mg *defaultLogManager) run() {
 
 			for q := range mg.readChan {
 				onRead(q)
+			}
+
+			for sz := range mg.sizeChan {
+				onSize(sz)
 			}
 
 			atomic.AddInt32(closeLogFileChanClosed, 1)

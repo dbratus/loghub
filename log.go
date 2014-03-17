@@ -50,6 +50,13 @@ type Logger interface {
 	ReadLog(*LogQuery)
 }
 
+type LogManager interface {
+	Logger
+
+	Close()
+	Size() int64
+}
+
 func EncodeMessage(msg string) ([]byte, int) {
 	if len(msg) > PlainMessageMaxLength {
 		buf := new(bytes.Buffer)

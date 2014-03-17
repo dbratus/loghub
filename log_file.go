@@ -20,8 +20,8 @@ import (
 	"encoding/binary"
 	"os"
 	"regexp"
-	"sync/atomic"
 	"runtime"
+	"sync/atomic"
 )
 
 const defaultEntryBufferSize = 1024
@@ -37,6 +37,7 @@ type logClose struct {
 type LogFile struct {
 	writeChan chan *LogEntry
 	readChan  chan *LogQuery
+	sizeChan  chan chan int64
 	closeChan chan *logClose
 }
 
@@ -64,7 +65,7 @@ func OpenLogFile(path string, create bool) (*LogFile, error) {
 	}
 
 	if f, err := os.OpenFile(path, flags, 0660); err == nil {
-		log := &LogFile{make(chan *LogEntry), make(chan *LogQuery), make(chan *logClose)}
+		log := &LogFile{make(chan *LogEntry), make(chan *LogQuery), make(chan chan int64), make(chan *logClose)}
 
 		go log.run(f)
 
@@ -457,6 +458,11 @@ func (log *LogFile) run(file *os.File) {
 		go findAndReadEntries(file, lastEntryOffset, q, readsCounter)
 	}
 
+	onSize := func(sz chan int64) {
+		sz <- currentOffset
+		close(sz)
+	}
+
 	for run := true; run; {
 		select {
 		case ent, ok := <-log.writeChan:
@@ -468,6 +474,10 @@ func (log *LogFile) run(file *os.File) {
 			if ok {
 				onRead(q)
 			}
+		case sz, ok := <-log.sizeChan:
+			if ok {
+				onSize(sz)
+			}
 
 		case cmd := <-log.closeChan:
 			for ent := range log.writeChan {
@@ -476,6 +486,10 @@ func (log *LogFile) run(file *os.File) {
 
 			for q := range log.readChan {
 				onRead(q)
+			}
+
+			for sz := range log.sizeChan {
+				onSize(sz)
 			}
 
 			for cnt := atomic.LoadInt32(readsCounter); cnt > 0; cnt = atomic.LoadInt32(readsCounter) {
@@ -497,9 +511,16 @@ func (log *LogFile) ReadLog(q *LogQuery) {
 	log.readChan <- q
 }
 
+func (log *LogFile) Size() int64 {
+	result := make(chan int64)
+	log.sizeChan <- result
+	return <-result
+}
+
 func (log *LogFile) Close() {
 	close(log.writeChan)
 	close(log.readChan)
+	close(log.sizeChan)
 
 	ack := make(chan bool)
 	closeCmd := &logClose{ack}

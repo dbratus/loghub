@@ -48,6 +48,8 @@ func TestWriteReadLogFile(t *testing.T) {
 
 	defer cleanup()
 
+	fileSize := log.Size()
+
 	entriesCount := hopLength * 3
 
 	for i := 0; i < entriesCount; i++ {
@@ -55,6 +57,11 @@ func TestWriteReadLogFile(t *testing.T) {
 		ent := &LogEntry{int64(i + 1), 1, "Test", EncodingPlain, []byte(msg)}
 
 		log.WriteLog(ent)
+	}
+
+	if log.Size() == fileSize {
+		t.Error("Size of the log file must change after write.")
+		t.FailNow()
 	}
 
 	var logEntries chan *LogEntry

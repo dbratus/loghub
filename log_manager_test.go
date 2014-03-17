@@ -63,6 +63,8 @@ func TestWriteReadLog(t *testing.T) {
 
 	entriesPerSource := 10
 	logManager := NewDefaultLogManager(getTestLogHome())
+	initialLogSize := logManager.Size()
+
 	beforeWrite := time.Now()
 
 	for i := 0; i < entriesPerSource; i++ {
@@ -73,7 +75,15 @@ func TestWriteReadLog(t *testing.T) {
 		}
 	}
 
+	newLogManagerSize := logManager.Size()
+
+	if newLogManagerSize == initialLogSize {
+		t.Error("Log size after write must change.")
+		t.FailNow()
+	}
+
 	logManager.Close()
+
 	afterWrite := time.Now()
 
 	logManager = NewDefaultLogManager(getTestLogHome())
@@ -91,12 +101,24 @@ func TestWriteReadLog(t *testing.T) {
 		t.FailNow()
 	}
 
+	initialLogSize = logManager.Size()
+
+	if initialLogSize != newLogManagerSize {
+		t.Error("Log size after open must not change.")
+		t.FailNow()
+	}
+
 	for i := 0; i < entriesPerSource; i++ {
 		for _, src := range sources {
 			ent := &LogEntry{0, 1, src, EncodingPlain, []byte("Message")}
 
 			logManager.WriteLog(ent)
 		}
+	}
+
+	if logManager.Size() == initialLogSize {
+		t.Error("Log size after write must change.")
+		t.FailNow()
 	}
 
 	logManager.Close()
