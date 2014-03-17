@@ -106,6 +106,8 @@ func getCommand(args []string) {
 	minSev := flags.Int("minsev", 0, "Min severity.")
 	maxSev := flags.Int("maxsev", 0, "Max severity.")
 	src := flags.String("src", "", "Log sources.")
+	format := flags.String("fmt", "%s %s %d %s", "Log entry format.")
+	tsfmt := flags.String("tsfmt", "2006-01-02 15:04:05", "Timestamp format.")
 
 	flags.Parse(args)
 
@@ -155,10 +157,27 @@ func getCommand(args []string) {
 
 	close(queries)
 
-	for ent := range results {
-		//TODO: Accept format as argument.
-		fmt.Printf("%s %d %s %s", time.Unix(0, ent.Ts).String(), ent.Sev, ent.Src, ent.Msg)
+	formatText := func(ent *OutgoingLogEntryJSON) {
+		fmt.Printf(*format, time.Unix(0, ent.Ts).Format(*tsfmt), ent.Src, ent.Sev, ent.Msg)
 		fmt.Println()
+	}
+
+	formatJSON := func(ent *OutgoingLogEntryJSON) {
+		if bytes, err := json.Marshal(ent); err == nil {
+			fmt.Println(string(bytes))
+		}
+	}
+
+	var formatEntry func(*OutgoingLogEntryJSON)
+
+	if *format == "JSON" {
+		formatEntry = formatJSON
+	} else {
+		formatEntry = formatText
+	}
+
+	for ent := range results {
+		formatEntry(ent)
 	}
 }
 
