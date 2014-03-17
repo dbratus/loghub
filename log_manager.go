@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-var logFileCloseDelay = time.Second * 30
+var logFileTimeout = time.Second * 30
 
 type defaultLogManager struct {
 	home      string
@@ -155,11 +155,21 @@ func getLogFileNamesForRange(sources []string, minTimestamp int64, maxTimestamp 
 func (mg *defaultLogManager) run() {
 	logSources, closedSize, initialized := initLogManager(mg.home)
 	openLogFiles := make(map[string]LogManager)
+	logFileTimeouts := make(map[string]*int64)
 	closeLogFileChan := make(chan string)
 	closeLogFileChanClosed := new(int32)
 
-	waitAndCloseFile := func(fileName string) {
-		<-time.After(logFileCloseDelay)
+	waitAndCloseFile := func(fileName string, timeout *int64) {
+		for tmUnix := atomic.LoadInt64(timeout); ; {
+			now := time.Now()
+			tm := time.Unix(0, tmUnix)
+
+			if tm.After(now) {
+				<-time.After(tm.Sub(now))
+			} else {
+				break
+			}
+		}
 
 		if atomic.LoadInt32(closeLogFileChanClosed) == 0 {
 			closeLogFileChan <- fileName
@@ -188,14 +198,21 @@ func (mg *defaultLogManager) run() {
 				openLogFiles[fileName] = logFile
 				closedSize -= logFile.Size()
 
-				go waitAndCloseFile(fileName)
+				timeout := new(int64)
+				*timeout = time.Now().Add(logFileTimeout).UnixNano()
+				logFileTimeouts[fileName] = timeout
+
+				go waitAndCloseFile(fileName, timeout)
 
 				return logFile, nil
 			} else {
 				return nil, err
 			}
 		} else {
-			//TODO: Prolongate log file timeout on access.
+			if timeout, found := logFileTimeouts[fileName]; found {
+				atomic.StoreInt64(timeout, time.Now().Add(logFileTimeout).UnixNano())
+			}
+
 			return logFile, nil
 		}
 	}
@@ -293,11 +310,11 @@ func (mg *defaultLogManager) run() {
 	}
 
 	onClose := func(logFileToClose string) {
-		//TODO: Prolongate log file timeout on access.
 		if logFile, found := openLogFiles[logFileToClose]; found {
 			closedSize += logFile.Size()
 			logFile.Close()
 			delete(openLogFiles, logFileToClose)
+			delete(logFileTimeouts, logFileToClose)
 		}
 	}
 
