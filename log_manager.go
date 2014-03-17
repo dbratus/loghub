@@ -279,6 +279,7 @@ func (mg *defaultLogManager) run() {
 				//TODO: Prolongate log file timeout on access.
 				if logFile, found := openLogFiles[logFileToClose]; found {
 					logFile.Close()
+					delete(openLogFiles, logFileToClose)
 				}
 			}
 

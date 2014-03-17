@@ -17,6 +17,8 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -31,6 +33,7 @@ var commands = map[string]func([]string){
 	"log":  logCommand,
 	"hub":  hubCommand,
 	"get":  getCommand,
+	"put":  putCommand,
 	"help": helpCommand,
 }
 
@@ -51,6 +54,7 @@ func printCommands() {
 	fmt.Println("  log  Starts log.")
 	fmt.Println("  hub  Starts hub.")
 	fmt.Println("  get  Gets log entries from log or hub.")
+	fmt.Println("  put  Puts log entries to log or hub.")
 	fmt.Println()
 	fmt.Println("See 'loghub help <command>' for more information on a specific command.")
 }
@@ -152,8 +156,48 @@ func getCommand(args []string) {
 	close(queries)
 
 	for ent := range results {
+		//TODO: Accept format as argument.
 		fmt.Printf("%s %d %s %s", time.Unix(0, ent.Ts).String(), ent.Sev, ent.Src, ent.Msg)
 		fmt.Println()
+	}
+}
+
+func putCommand(args []string) {
+	flags := flag.NewFlagSet("get", flag.ExitOnError)
+	addr := flags.String("addr", "", "Address and port of log or hub.")
+
+	flags.Parse(args)
+
+	if *addr == "" {
+		println("Log or hub address is not specified.")
+		os.Exit(1)
+	}
+
+	input := bufio.NewReader(os.Stdin)
+	client := NewLogHubClient(*addr, 1)
+	entChan := make(chan *IncomingLogEntryJSON)
+
+	client.Write(entChan)
+
+	defer func() {
+		close(entChan)
+		client.Close()
+	}()
+
+	for {
+		if line, _, err := input.ReadLine(); err == nil {
+			if len(line) == 0 {
+				break
+			}
+
+			ent := new(IncomingLogEntryJSON)
+
+			if err = json.Unmarshal(line, ent); err == nil && ent.IsValid() {
+				entChan <- ent
+			}
+		} else {
+			break
+		}
 	}
 }
 

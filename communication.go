@@ -79,6 +79,11 @@ type IncomingLogEntryJSON struct {
 	Msg string
 }
 
+//Validates the incoming message.
+func (m *IncomingLogEntryJSON) IsValid() bool {
+	return len(m.Src) > 0 && len(m.Msg) > 0
+}
+
 //The log entries returned by the hub to its clients.
 type OutgoingLogEntryJSON struct {
 	IncomingLogEntryJSON
