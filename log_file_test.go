@@ -22,6 +22,91 @@ import (
 	"testing"
 )
 
+func TestWriteCloseWriteReadLogFile(t *testing.T) {
+	testLogFilePath := os.TempDir() + "loghub.write-close-write-read-test.log"
+
+	//println(testLogFilePath)
+
+	var log *LogFile
+
+	if l, err := OpenLogFile(testLogFilePath, true); err != nil {
+		t.Error("OpenCreateLogFile failed.", err)
+		t.FailNow()
+	} else {
+		if l == nil {
+			t.Error("Nil returned by OpenCreateLogFile successful call.")
+			t.FailNow()
+		}
+
+		log = l
+	}
+
+	cleanup := func() {
+		os.Remove(testLogFilePath)
+	}
+
+	defer cleanup()
+
+	entriesCount := 3
+
+	for i := 0; i < entriesCount; i++ {
+		var msg string
+
+		if i == 2 {
+			msg = "Message Сообщение"
+		} else {
+			msg = "Message"
+		}
+
+		ent := &LogEntry{int64(i + 1), 1, "Test", EncodingPlain, []byte(msg)}
+
+		log.WriteLog(ent)
+	}
+
+	log.Close()
+
+	if l, err := OpenLogFile(testLogFilePath, true); err != nil {
+		t.Error("OpenCreateLogFile failed.", err)
+		t.FailNow()
+	} else {
+		if l == nil {
+			t.Error("Nil returned by OpenCreateLogFile successful call.")
+			t.FailNow()
+		}
+
+		log = l
+	}
+
+	for i := 0; i < entriesCount; i++ {
+		var msg string
+
+		if i == 2 {
+			msg = "Message Сообщение"
+		} else {
+			msg = "Message"
+		}
+
+		ent := &LogEntry{int64(entriesCount + i + 1), 1, "Test", EncodingPlain, []byte(msg)}
+
+		log.WriteLog(ent)
+	}
+
+	minTs := int64(-1)
+	maxTs := int64(entriesCount*2 + 1)
+	logEntries := make(chan *LogEntry)
+	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, "Test", logEntries})
+	cnt := 0
+
+	for _ = range logEntries {
+		cnt++
+	}
+
+	if cnt != entriesCount*2 {
+		t.Errorf("%d entries read of %d expected.", cnt, entriesCount*2)
+		t.FailNow()
+	}
+}
+
 func TestWriteReadLogFile(t *testing.T) {
 	testLogFilePath := os.TempDir() + "loghub.test.log"
 
@@ -42,7 +127,6 @@ func TestWriteReadLogFile(t *testing.T) {
 	}
 
 	cleanup := func() {
-		log.Close()
 		os.Remove(testLogFilePath)
 	}
 
@@ -62,6 +146,20 @@ func TestWriteReadLogFile(t *testing.T) {
 	if log.Size() == fileSize {
 		t.Error("Size of the log file must change after write.")
 		t.FailNow()
+	}
+
+	log.Close()
+
+	if l, err := OpenLogFile(testLogFilePath, true); err != nil {
+		t.Error("OpenCreateLogFile failed.", err)
+		t.FailNow()
+	} else {
+		if l == nil {
+			t.Error("Nil returned by OpenCreateLogFile successful call.")
+			t.FailNow()
+		}
+
+		log = l
 	}
 
 	var logEntries chan *LogEntry
@@ -185,4 +283,6 @@ func TestWriteReadLogFile(t *testing.T) {
 		t.Errorf("%d entries read of %d expected.", cnt, 0)
 		t.FailNow()
 	}
+
+	log.Close()
 }

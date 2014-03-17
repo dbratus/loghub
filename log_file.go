@@ -352,6 +352,7 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 		header, ok := readEntryHeader(file, offset)
 		nextOffset := offset + header.NextOffset()
 
+		//Checking if the last entry is written completely.
 		if !ok || nextOffset > fileSize {
 			//The file is broken and needs to be fixed.
 			//By truncating the file, we remove the last record
@@ -370,7 +371,13 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 			}
 
 			return
-		} else if nextOffset == fileSize {
+		}
+
+		lastTimestampWritten = header.timestamp
+		prevPayloadLen = header.payloadLength
+
+		//Checking the end of the file.
+		if nextOffset == fileSize {
 			//Setting the cursor to the end of the file.
 			if _, err := file.Seek(0, 2); err != nil {
 				println("Failed to seek to the end of a log file:", err.Error())
@@ -385,6 +392,7 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 			panic("Next offset must be greater than the current.")
 		}
 
+		//Moving next.
 		if header.hop > 0 {
 			hopOffset := offset + int64(header.hop)
 			hopCounter = hopLength
@@ -401,9 +409,6 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 			offset = nextOffset
 			hopCounter--
 		}
-
-		lastTimestampWritten = header.timestamp
-		prevPayloadLen = header.payloadLength
 	}
 
 	return
