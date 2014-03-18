@@ -417,7 +417,6 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 func (log *LogFile) run(file *os.File) {
 	buf := make([]byte, 0, defaultEntryBufferSize)
 
-	//TODO: Init on first write.
 	lastTimestampWritten, prevPayloadLen, nextHopStartOffset, hopCounter, initialized := initLogFile(file)
 	currentOffset, _ := file.Seek(0, 1)
 	readsCounter := new(int32)
