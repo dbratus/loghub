@@ -20,12 +20,15 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/dbratus/loghub/trace"
 	"os"
 	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
 )
+
+var logManagerTrace = trace.New("LogManager")
 
 var logFileTimeout = time.Second * 30
 
@@ -125,23 +128,23 @@ func initLogManager(home string) (logSources map[string]bool, size int64, initia
 							size += logFile.Size()
 						}
 					} else {
-						println("Failed to initialize log manager:", err.Error())
+						logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
 						initialized = false
 						return
 					}
 
 				} else {
-					println("Failed to initialize log manager:", err.Error())
+					logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
 					initialized = false
 					return
 				}
 			}
 		} else {
-			println("Failed to initialize log manager:", err.Error())
+			logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
 			initialized = false
 		}
 	} else {
-		println("Failed to initialize log manager:", err.Error())
+		logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
 		initialized = false
 	}
 
@@ -249,7 +252,7 @@ func (mg *defaultLogManager) run() {
 				}
 			} else {
 				if !os.IsNotExist(err) {
-					println("Failed to get log file:", err.Error())
+					logManagerTrace.Errorf("Failed to get log file: %s.", err.Error())
 				}
 			}
 		}
@@ -274,7 +277,7 @@ func (mg *defaultLogManager) run() {
 				logFile.WriteLog(ent)
 				logSources[ent.Source] = true
 			} else {
-				println("Failed to obtain log file :", err.Error())
+				logManagerTrace.Errorf("Failed to obtain log file: %s.", err.Error())
 			}
 		}
 	}
