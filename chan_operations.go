@@ -64,6 +64,14 @@ func MergeLogs(leftIn chan *LogEntry, rightIn chan *LogEntry, out chan *LogEntry
 	}
 }
 
+func ForwardLog(from chan *LogEntry, to chan *LogEntry) {
+	for ent := range from {
+		to <- ent
+	}
+
+	close(to)
+}
+
 func PurgeIncomingLogEntryJSON(entries chan *IncomingLogEntryJSON) {
 	for _ = range entries {
 	}

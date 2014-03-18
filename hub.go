@@ -18,12 +18,20 @@ package main
 
 import (
 	"net"
+	"runtime"
+	"strconv"
+	"sync/atomic"
+	"time"
 )
 
-const maxConnectionsPerClient = 10
+const (
+	maxConnectionsPerClient = 10
+	logCloseTimeout         = time.Minute * 30
+	logTimeoutsCheckInteval = time.Second * 10
+)
 
 type Hub interface {
-	ReadLog(chan *LogQuery, chan *LogEntry)
+	ReadLog([]*LogQuery, chan *LogEntry)
 	SetLogStat(net.IP, *LogStat)
 	Close()
 }
@@ -34,7 +42,7 @@ type setLogStatCmd struct {
 }
 
 type readLogMultiSrcCmd struct {
-	queries chan *LogQuery
+	queries []*LogQuery
 	entries chan *LogEntry
 }
 
@@ -57,21 +65,104 @@ func NewDefaultHub() Hub {
 }
 
 func (h *defaultHub) run() {
+	type logInfo struct {
+		stat         *LogStat
+		client       MessageHandler
+		timeout      time.Time
+		readersCount *int32
+	}
+
+	logs := make(map[string]*logInfo)
+
+	readLog := func(queries []*LogQuery, client MessageHandler, entries chan *LogEntry, readersCount *int32) {
+		atomic.AddInt32(readersCount, 1)
+		defer atomic.AddInt32(readersCount, -1)
+
+		queriesJSON := make(chan *LogQueryJSON)
+		results := make(chan *InternalLogEntryJSON)
+
+		client.InternalRead(queriesJSON, results)
+
+		for _, q := range queries {
+			queriesJSON <- LogQueryToLogQueryJSON(q)
+		}
+
+		close(queriesJSON)
+
+		for ent := range results {
+			entries <- InternalLogEntryJSONToLogEntry(ent)
+		}
+
+		close(entries)
+	}
 
 	onRead := func(cmd *readLogMultiSrcCmd) {
-		close(cmd.entries)
+		var results chan *LogEntry = nil
+
+		for _, stat := range logs {
+			entries := make(chan *LogEntry)
+
+			go readLog(cmd.queries, stat.client, entries, stat.readersCount)
+
+			if results == nil {
+				results = entries
+			} else {
+				merged := make(chan *LogEntry)
+				go MergeLogs(entries, results, merged)
+				results = merged
+			}
+		}
+
+		go ForwardLog(results, cmd.entries)
 	}
 
 	onSetLogStat := func(cmd *setLogStatCmd) {
+		ip := cmd.addr.String()
+
+		if log, found := logs[ip]; found {
+			log.stat = cmd.stat
+			log.timeout = time.Now().Add(logCloseTimeout)
+		} else {
+			logs[ip] = &logInfo{
+				cmd.stat,
+				NewLogHubClient(ip+":"+strconv.Itoa(cmd.stat.Port), maxConnectionsPerClient),
+				time.Now().Add(logCloseTimeout),
+				new(int32),
+			}
+		}
+	}
+
+	onCheckTimeouts := func() {
+		now := time.Now()
+
+		for ip, stat := range logs {
+			if now.After(stat.timeout) {
+				delete(logs, ip)
+
+				go func() {
+					for atomic.LoadInt32(stat.readersCount) > 0 {
+						runtime.Gosched()
+					}
+					stat.client.Close()
+				}()
+			}
+		}
 	}
 
 	for {
 		select {
-		case cmd := <-h.readChan:
-			onRead(cmd)
+		case cmd, ok := <-h.readChan:
+			if ok {
+				onRead(cmd)
+			}
 
-		case cmd := <-h.statChan:
-			onSetLogStat(cmd)
+		case cmd, ok := <-h.statChan:
+			if ok {
+				onSetLogStat(cmd)
+			}
+
+		case <-time.After(logTimeoutsCheckInteval):
+			onCheckTimeouts()
 
 		case ack := <-h.closeChan:
 			for cmd := range h.readChan {
@@ -89,7 +180,7 @@ func (h *defaultHub) SetLogStat(addr net.IP, stat *LogStat) {
 	h.statChan <- &setLogStatCmd{addr, stat}
 }
 
-func (h *defaultHub) ReadLog(queries chan *LogQuery, entries chan *LogEntry) {
+func (h *defaultHub) ReadLog(queries []*LogQuery, entries chan *LogEntry) {
 	h.readChan <- &readLogMultiSrcCmd{queries, entries}
 }
 
