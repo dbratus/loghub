@@ -29,16 +29,27 @@ import (
 
 var logFileTimeout = time.Second * 30
 
+type readLogCmd struct {
+	query   *LogQuery
+	entries chan *LogEntry
+}
+
 type defaultLogManager struct {
 	home      string
 	writeChan chan *LogEntry
-	readChan  chan *LogQuery
+	readChan  chan readLogCmd
 	sizeChan  chan chan int64
-	closeChan chan *logClose
+	closeChan chan chan bool
 }
 
 func NewDefaultLogManager(home string) LogManager {
-	var mg = &defaultLogManager{home, make(chan *LogEntry), make(chan *LogQuery), make(chan chan int64), make(chan *logClose)}
+	var mg = &defaultLogManager{
+		home,
+		make(chan *LogEntry),
+		make(chan readLogCmd),
+		make(chan chan int64),
+		make(chan chan bool),
+	}
 
 	go mg.run()
 
@@ -49,8 +60,8 @@ func (mg *defaultLogManager) WriteLog(ent *LogEntry) {
 	mg.writeChan <- ent
 }
 
-func (mg *defaultLogManager) ReadLog(q *LogQuery) {
-	mg.readChan <- q
+func (mg *defaultLogManager) ReadLog(q *LogQuery, entries chan *LogEntry) {
+	mg.readChan <- readLogCmd{q, entries}
 }
 
 func (mg *defaultLogManager) Size() int64 {
@@ -65,9 +76,7 @@ func (mg *defaultLogManager) Close() {
 	close(mg.sizeChan)
 
 	ack := make(chan bool)
-	closeCmd := &logClose{ack}
-
-	mg.closeChan <- closeCmd
+	mg.closeChan <- ack
 	<-ack
 
 	close(mg.closeChan)
@@ -217,25 +226,25 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
-	queryLogSources := func(sources []string, q *LogQuery) {
+	queryLogSources := func(sources []string, cmd readLogCmd) {
 		fileNames := make(chan string)
 
-		go getLogFileNamesForRange(sources, q.From, q.To, fileNames)
+		go getLogFileNamesForRange(sources, cmd.query.From, cmd.query.To, fileNames)
 
 		var results chan *LogEntry = nil
 
 		for fileName := range fileNames {
 			if logFile, err := getLogFile(fileName, false); err == nil {
-				subQuery := *q
-				subQuery.Result = make(chan *LogEntry)
+				subQuery := *cmd.query
+				res := make(chan *LogEntry)
 
-				logFile.ReadLog(&subQuery)
+				logFile.ReadLog(&subQuery, res)
 
 				if results == nil {
-					results = subQuery.Result
+					results = res
 				} else {
 					merged := make(chan *LogEntry)
-					go MergeLogs(results, subQuery.Result, merged)
+					go MergeLogs(results, res, merged)
 					results = merged
 				}
 			} else {
@@ -248,11 +257,11 @@ func (mg *defaultLogManager) run() {
 		go func() {
 			if results != nil {
 				for ent := range results {
-					q.Result <- ent
+					cmd.entries <- ent
 				}
 			}
 
-			close(q.Result)
+			close(cmd.entries)
 		}()
 	}
 
@@ -270,12 +279,12 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
-	onRead := func(q *LogQuery) {
+	onRead := func(cmd readLogCmd) {
 		if initialized {
 			sources := make([]string, 0, 100)
 
-			if q.Source != "" {
-				if re, err := regexp.Compile(q.Source); err == nil {
+			if cmd.query.Source != "" {
+				if re, err := regexp.Compile(cmd.query.Source); err == nil {
 					for src, _ := range logSources {
 						if re.MatchString(src) {
 							sources = append(sources, src)
@@ -289,12 +298,12 @@ func (mg *defaultLogManager) run() {
 			}
 
 			if len(sources) > 0 {
-				queryLogSources(sources, q)
+				queryLogSources(sources, cmd)
 			} else {
-				close(q.Result)
+				close(cmd.entries)
 			}
 		} else {
-			close(q.Result)
+			close(cmd.entries)
 		}
 	}
 
@@ -318,7 +327,7 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
-	for run := true; run; {
+	for {
 		select {
 		case ent, ok := <-mg.writeChan:
 			if ok {
@@ -330,9 +339,9 @@ func (mg *defaultLogManager) run() {
 				onClose(logFileToClose)
 			}
 
-		case q, ok := <-mg.readChan:
+		case cmd, ok := <-mg.readChan:
 			if ok {
-				onRead(q)
+				onRead(cmd)
 			}
 
 		case sz, ok := <-mg.sizeChan:
@@ -340,13 +349,13 @@ func (mg *defaultLogManager) run() {
 				onSize(sz)
 			}
 
-		case cmd := <-mg.closeChan:
+		case ack := <-mg.closeChan:
 			for ent := range mg.writeChan {
 				onWrite(ent)
 			}
 
-			for q := range mg.readChan {
-				onRead(q)
+			for cmd := range mg.readChan {
+				onRead(cmd)
 			}
 
 			for sz := range mg.sizeChan {
@@ -360,8 +369,9 @@ func (mg *defaultLogManager) run() {
 				logFile.Close()
 			}
 
-			cmd.ack <- true
-			run = false
+			ack <- true
+			close(ack)
+			return
 		}
 	}
 }

@@ -42,12 +42,25 @@ type LogQuery struct {
 	MinSeverity int
 	MaxSeverity int
 	Source      string
-	Result      chan *LogEntry
+}
+
+type LogStat struct {
+	Size            int64
+	ResistanceLevel int64
+	Port            int
+}
+
+type LogWriter interface {
+	WriteLog(*LogEntry)
+}
+
+type LogReader interface {
+	ReadLog(*LogQuery, chan *LogEntry)
 }
 
 type Logger interface {
-	WriteLog(*LogEntry)
-	ReadLog(*LogQuery)
+	LogReader
+	LogWriter
 }
 
 type LogManager interface {

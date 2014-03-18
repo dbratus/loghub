@@ -94,7 +94,7 @@ func TestWriteCloseWriteReadLogFile(t *testing.T) {
 	minTs := int64(-1)
 	maxTs := int64(entriesCount*2 + 1)
 	logEntries := make(chan *LogEntry)
-	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, "Test", logEntries})
+	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, "Test"}, logEntries)
 	cnt := 0
 
 	for _ = range logEntries {
@@ -170,7 +170,7 @@ func TestWriteReadLogFile(t *testing.T) {
 	minTs = -1
 	maxTs = int64(entriesToRead)
 	logEntries = make(chan *LogEntry)
-	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, "Test", logEntries})
+	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, "Test"}, logEntries)
 	cnt = 0
 
 	for {
@@ -196,7 +196,7 @@ func TestWriteReadLogFile(t *testing.T) {
 	logEntries = make(chan *LogEntry)
 	minTs = int64(entriesToRead)
 	maxTs = int64(entriesCount * 2)
-	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, "Test", logEntries})
+	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, "Test"}, logEntries)
 	cnt = 0
 
 	for {
@@ -223,7 +223,7 @@ func TestWriteReadLogFile(t *testing.T) {
 	entriesToRead = hopLength * 2
 	minTs = int64(hopLength / 2)
 	maxTs = int64(hopLength*2 + hopLength/2)
-	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, "", logEntries})
+	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, ""}, logEntries)
 	cnt = 0
 
 	for {
@@ -247,7 +247,7 @@ func TestWriteReadLogFile(t *testing.T) {
 	}
 
 	logEntries = make(chan *LogEntry)
-	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, "X", logEntries})
+	log.ReadLog(&LogQuery{minTs, maxTs, 1, 1, "X"}, logEntries)
 	cnt = 0
 
 	for {
@@ -266,7 +266,7 @@ func TestWriteReadLogFile(t *testing.T) {
 	}
 
 	logEntries = make(chan *LogEntry)
-	log.ReadLog(&LogQuery{minTs, maxTs, 0, 0, "Test", logEntries})
+	log.ReadLog(&LogQuery{minTs, maxTs, 0, 0, "Test"}, logEntries)
 	cnt = 0
 
 	for {

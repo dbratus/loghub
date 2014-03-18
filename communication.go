@@ -177,5 +177,5 @@ func InternalLogEntryJSONToLogEntry(in *InternalLogEntryJSON) *LogEntry {
 }
 
 func LogQueryJSONToLogQuery(in *LogQueryJSON) *LogQuery {
-	return &LogQuery{in.From, in.To, in.MinSev, in.MaxSev, in.Src, nil}
+	return &LogQuery{in.From, in.To, in.MinSev, in.MaxSev, in.Src}
 }

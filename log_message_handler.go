@@ -35,18 +35,19 @@ func (mh *logMessageHandler) queryMultiple(queries chan *LogQueryJSON) chan *Log
 
 	for qJSON := range queries {
 		q := LogQueryJSONToLogQuery(qJSON)
+		var res chan *LogEntry
 
 		if results == nil {
 			results = make(chan *LogEntry)
-			q.Result = results
+			res = results
 		} else {
-			q.Result = make(chan *LogEntry)
+			res = make(chan *LogEntry)
 			mergedResults := make(chan *LogEntry)
-			go MergeLogs(results, q.Result, mergedResults)
+			go MergeLogs(results, res, mergedResults)
 			results = mergedResults
 		}
 
-		mh.logManager.ReadLog(q)
+		mh.logManager.ReadLog(q, res)
 	}
 
 	return results

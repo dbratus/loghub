@@ -89,7 +89,7 @@ func TestWriteReadLog(t *testing.T) {
 	logManager = NewDefaultLogManager(getTestLogHome())
 
 	qResult := make(chan *LogEntry)
-	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src.", qResult})
+	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src."}, qResult)
 	entCnt := 0
 
 	for _ = range qResult {
@@ -127,7 +127,7 @@ func TestWriteReadLog(t *testing.T) {
 
 	logManager = NewDefaultLogManager(getTestLogHome())
 	qResult = make(chan *LogEntry)
-	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src.", qResult})
+	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src."}, qResult)
 	entCnt = 0
 
 	for _ = range qResult {

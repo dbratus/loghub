@@ -30,15 +30,11 @@ const timestampLength = 8
 const entryHeaderLength = entryPayloadBase + timestampLength
 const hopLength = 64
 
-type logClose struct {
-	ack chan bool
-}
-
 type LogFile struct {
 	writeChan chan *LogEntry
-	readChan  chan *LogQuery
+	readChan  chan readLogCmd
 	sizeChan  chan chan int64
-	closeChan chan *logClose
+	closeChan chan chan bool
 }
 
 type entryHeader struct {
@@ -65,7 +61,12 @@ func OpenLogFile(path string, create bool) (*LogFile, error) {
 	}
 
 	if f, err := os.OpenFile(path, flags, 0660); err == nil {
-		log := &LogFile{make(chan *LogEntry), make(chan *LogQuery), make(chan chan int64), make(chan *logClose)}
+		log := &LogFile{
+			make(chan *LogEntry),
+			make(chan readLogCmd),
+			make(chan chan int64),
+			make(chan chan bool),
+		}
 
 		go log.run(f)
 
@@ -215,69 +216,69 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	return
 }
 
-func readEntries(file *os.File, q *LogQuery, offset int64, lastEntryOffset int64) {
+func readEntries(file *os.File, cmd readLogCmd, offset int64, lastEntryOffset int64) {
 	for {
 		header, ok := readEntryHeader(file, offset)
 
 		if !ok {
-			close(q.Result)
+			close(cmd.entries)
 			return
 		}
 
 		var srcRegexp *regexp.Regexp = nil
 		filterBySource := false
 
-		if q.Source != "" {
+		if cmd.query.Source != "" {
 			filterBySource = true
 
-			if re, err := regexp.Compile(q.Source); err == nil {
+			if re, err := regexp.Compile(cmd.query.Source); err == nil {
 				srcRegexp = re
 			}
 		}
 
-		if header.timestamp >= q.From && header.timestamp <= q.To {
+		if header.timestamp >= cmd.query.From && header.timestamp <= cmd.query.To {
 			if ent, ok := readEntry(file, offset); ok {
 				if (!filterBySource || (srcRegexp != nil && srcRegexp.MatchString(ent.Source))) &&
-					ent.Severity >= q.MinSeverity &&
-					ent.Severity <= q.MaxSeverity {
-					q.Result <- ent
+					ent.Severity >= cmd.query.MinSeverity &&
+					ent.Severity <= cmd.query.MaxSeverity {
+					cmd.entries <- ent
 				}
 			} else {
-				close(q.Result)
+				close(cmd.entries)
 				return
 			}
 		} else {
-			close(q.Result)
+			close(cmd.entries)
 			return
 		}
 
 		if offset < lastEntryOffset {
 			offset += header.NextOffset()
 		} else {
-			close(q.Result)
+			close(cmd.entries)
 			return
 		}
 	}
 }
 
-func findLeftBoundFromLeft(file *os.File, q *LogQuery, offset int64, lastEntryOffset int64) {
+func findLeftBoundFromLeft(file *os.File, cmd readLogCmd, offset int64, lastEntryOffset int64) {
 
 	//Go right without hops.
 	for {
 		header, ok := readEntryHeader(file, offset)
 
 		if !ok {
-			close(q.Result)
+			close(cmd.entries)
 			return
 		}
 
-		if header.timestamp >= q.From && header.timestamp <= q.To {
-			readEntries(file, q, offset, lastEntryOffset)
+		if header.timestamp >= cmd.query.From && header.timestamp <= cmd.query.To {
+			readEntries(file, cmd, offset, lastEntryOffset)
 			return
 		}
 
 		if offset == lastEntryOffset {
-			close(q.Result)
+			close(cmd.entries)
 			return
 		}
 
@@ -289,7 +290,7 @@ func findLeftBoundFromLeft(file *os.File, q *LogQuery, offset int64, lastEntryOf
 	}
 }
 
-func findAndReadEntries(file *os.File, lastEntryOffset int64, q *LogQuery, readsCounter *int32) {
+func findAndReadEntries(file *os.File, lastEntryOffset int64, cmd readLogCmd, readsCounter *int32) {
 	defer atomic.AddInt32(readsCounter, -1)
 
 	offset := lastEntryOffset
@@ -299,21 +300,21 @@ func findAndReadEntries(file *os.File, lastEntryOffset int64, q *LogQuery, reads
 		header, ok := readEntryHeader(file, offset)
 
 		if !ok {
-			close(q.Result)
+			close(cmd.entries)
 			return
 		}
 
-		if header.timestamp < q.From {
-			findLeftBoundFromLeft(file, q, offset, lastEntryOffset)
+		if header.timestamp < cmd.query.From {
+			findLeftBoundFromLeft(file, cmd, offset, lastEntryOffset)
 			return
 		}
 
 		if offset == 0 {
-			if header.timestamp >= q.From && header.timestamp <= q.To {
-				readEntries(file, q, offset, lastEntryOffset)
+			if header.timestamp >= cmd.query.From && header.timestamp <= cmd.query.To {
+				readEntries(file, cmd, offset, lastEntryOffset)
 				return
 			} else {
-				close(q.Result)
+				close(cmd.entries)
 				return
 			}
 		}
@@ -451,15 +452,15 @@ func (log *LogFile) run(file *os.File) {
 		}
 	}
 
-	onRead := func(q *LogQuery) {
-		if q.From >= q.To || q.MinSeverity > q.MaxSeverity {
-			close(q.Result)
+	onRead := func(cmd readLogCmd) {
+		if cmd.query.From >= cmd.query.To || cmd.query.MinSeverity > cmd.query.MaxSeverity {
+			close(cmd.entries)
 		}
 
 		lastEntryOffset := currentOffset - int64(prevPayloadLen+entryPayloadBase)
 
 		atomic.AddInt32(readsCounter, 1)
-		go findAndReadEntries(file, lastEntryOffset, q, readsCounter)
+		go findAndReadEntries(file, lastEntryOffset, cmd, readsCounter)
 	}
 
 	onSize := func(sz chan int64) {
@@ -467,29 +468,29 @@ func (log *LogFile) run(file *os.File) {
 		close(sz)
 	}
 
-	for run := true; run; {
+	for {
 		select {
 		case ent, ok := <-log.writeChan:
 			if ok {
 				onWrite(ent)
 			}
 
-		case q, ok := <-log.readChan:
+		case cmd, ok := <-log.readChan:
 			if ok {
-				onRead(q)
+				onRead(cmd)
 			}
 		case sz, ok := <-log.sizeChan:
 			if ok {
 				onSize(sz)
 			}
 
-		case cmd := <-log.closeChan:
+		case ack := <-log.closeChan:
 			for ent := range log.writeChan {
 				onWrite(ent)
 			}
 
-			for q := range log.readChan {
-				onRead(q)
+			for cmd := range log.readChan {
+				onRead(cmd)
 			}
 
 			for sz := range log.sizeChan {
@@ -501,8 +502,9 @@ func (log *LogFile) run(file *os.File) {
 			}
 
 			file.Close()
-			cmd.ack <- true
-			run = false
+			ack <- true
+			close(ack)
+			return
 		}
 	}
 }
@@ -511,8 +513,8 @@ func (log *LogFile) WriteLog(entry *LogEntry) {
 	log.writeChan <- entry
 }
 
-func (log *LogFile) ReadLog(q *LogQuery) {
-	log.readChan <- q
+func (log *LogFile) ReadLog(q *LogQuery, entries chan *LogEntry) {
+	log.readChan <- readLogCmd{q, entries}
 }
 
 func (log *LogFile) Size() int64 {
@@ -527,9 +529,7 @@ func (log *LogFile) Close() {
 	close(log.sizeChan)
 
 	ack := make(chan bool)
-	closeCmd := &logClose{ack}
-
-	log.closeChan <- closeCmd
+	log.closeChan <- ack
 	<-ack
 
 	close(log.closeChan)
