@@ -17,12 +17,15 @@
 package main
 
 import (
+	"github.com/dbratus/loghub/trace"
 	"net"
 	"runtime"
 	"strconv"
 	"sync/atomic"
 	"time"
 )
+
+var hubTrace = trace.New("Hub")
 
 const (
 	maxConnectionsPerClient = 10
@@ -117,15 +120,17 @@ func (h *defaultHub) run() {
 	}
 
 	onSetLogStat := func(cmd *setLogStatCmd) {
-		ip := cmd.addr.String()
+		addr := cmd.addr.String() + ":" + strconv.Itoa(cmd.stat.Port)
 
-		if log, found := logs[ip]; found {
+		hubTrace.Debugf("Got stat from %s: SZ=%d, RL=%d.", addr, cmd.stat.Size, cmd.stat.ResistanceLevel)
+
+		if log, found := logs[addr]; found {
 			log.stat = cmd.stat
 			log.timeout = time.Now().Add(logCloseTimeout)
 		} else {
-			logs[ip] = &logInfo{
+			logs[addr] = &logInfo{
 				cmd.stat,
-				NewLogHubClient(ip+":"+strconv.Itoa(cmd.stat.Port), maxConnectionsPerClient),
+				NewLogHubClient(addr, maxConnectionsPerClient),
 				time.Now().Add(logCloseTimeout),
 				new(int32),
 			}

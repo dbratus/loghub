@@ -185,6 +185,7 @@ func (cli *logHubClient) Write(entries chan *IncomingLogEntryJSON) {
 }
 
 func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *OutgoingLogEntryJSON) {
+	//TODO: Get rid of duplication.
 	var conn net.Conn
 	atomic.AddInt32(cli.activeOps, 1)
 
@@ -256,6 +257,7 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 }
 
 func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *InternalLogEntryJSON) {
+	//TODO: Get rid of duplication.
 	var conn net.Conn
 	atomic.AddInt32(cli.activeOps, 1)
 
