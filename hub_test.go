@@ -44,6 +44,12 @@ func TestHubSetStatRead(t *testing.T) {
 		hub.SetLogStat(net.IPv4(127, 0, 0, 1), &LogStat{0, 0, port})
 	}
 
+	defer func() {
+		for _, c := range closeFuncs {
+			c()
+		}
+	}()
+
 	entries := make(chan *LogEntry)
 	var queries = []*LogQuery{&LogQuery{}}
 
