@@ -18,6 +18,7 @@ package main
 
 import (
 	"encoding/binary"
+	"github.com/dbratus/loghub/trace"
 	"os"
 	"regexp"
 	"runtime"
@@ -29,6 +30,8 @@ const entryPayloadBase = 16
 const timestampLength = 8
 const entryHeaderLength = entryPayloadBase + timestampLength
 const hopLength = 64
+
+var logFileTrace = trace.New("LogFile")
 
 type LogFile struct {
 	writeChan chan *LogEntry
@@ -118,7 +121,7 @@ func writeHop(file *os.File, currentOffset int64, hopStartOffset int64) bool {
 	binary.BigEndian.PutUint32(int32Buf[:], uint32(currentOffset-hopStartOffset))
 
 	if _, err := file.WriteAt(int32Buf[:], hopStartOffset+int64(8)); err != nil {
-		println("Failed to write a hop:", err.Error())
+		logFileTrace.Errorf("Failed to write a hop: %s.", err.Error())
 		return false
 	}
 
@@ -129,7 +132,7 @@ func readEntryHeader(file *os.File, offset int64) (header entryHeader, ok bool) 
 	var headerBuf [entryHeaderLength]byte
 
 	if _, err := file.ReadAt(headerBuf[:], offset); err != nil {
-		println("Failed to read entry header at offset", offset, ":", err.Error())
+		logFileTrace.Errorf("Failed to read entry header at offset %d: %s.", offset, err.Error())
 		ok = false
 		return
 	}
@@ -170,7 +173,7 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	offset += int64(entryPayloadBase)
 
 	if _, err := file.ReadAt(int64Buf[:], offset); err != nil {
-		println("Failed to read log entry timestamp at", offset, ":", err.Error())
+		logFileTrace.Errorf("Failed to read log entry timestamp at offset %d: %s.", offset, err.Error())
 		ok = false
 		return
 	}
@@ -179,7 +182,7 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	offset += 8
 
 	if _, err := file.ReadAt(int64Buf[:1], offset); err != nil {
-		println("Failed to read log entry severity at", offset, ":", err.Error())
+		logFileTrace.Errorf("Failed to read log entry severity at offset %d: %s.", offset, err.Error())
 		ok = false
 		return
 	}
@@ -188,7 +191,7 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	offset += 1
 
 	if s, err := readBytes(file, offset); err != nil {
-		println("Failed to read log entry source at", offset, ":", err.Error())
+		logFileTrace.Errorf("Failed to read log entry source at offset %d: %s.", offset, err.Error())
 		ok = false
 		return
 	} else {
@@ -197,7 +200,7 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	}
 
 	if _, err := file.ReadAt(int64Buf[:1], offset); err != nil {
-		println("Failed to read log entry encoding at", offset, ":", err.Error())
+		logFileTrace.Errorf("Failed to read log entry encoding at offset %d: %s.", offset, err.Error())
 		ok = false
 		return
 	}
@@ -206,7 +209,7 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	offset += 1
 
 	if m, err := readBytes(file, offset); err != nil {
-		println("Failed to read log entry message at", offset, ":", err.Error())
+		logFileTrace.Errorf("Failed to read log entry message at offset %d: %s.", offset, err.Error())
 		ok = false
 		return
 	} else {
@@ -338,7 +341,7 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 	var fileSize int64
 
 	if stat, err := file.Stat(); err != nil {
-		println("Failed to get stat of a log file:", err.Error())
+		logFileTrace.Errorf("Failed to get stat of a log file: %s.", err.Error())
 		initialized = false
 		return
 	} else {
@@ -359,14 +362,14 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 			//By truncating the file, we remove the last record
 			//that was partially written.
 			if err := file.Truncate(offset); err != nil {
-				println("Failed to truncate a log file:", err.Error())
+				logFileTrace.Errorf("Failed to truncate a log file: %s.", err.Error())
 				initialized = false
 				return
 			}
 
 			//Setting the cursor to the end of the file.
 			if _, err := file.Seek(0, 2); err != nil {
-				println("Failed to seek to the end of a log file:", err.Error())
+				logFileTrace.Errorf("Failed to seek to the end of a log file: %s.", err.Error())
 				initialized = false
 				return
 			}
@@ -381,7 +384,7 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 		if nextOffset == fileSize {
 			//Setting the cursor to the end of the file.
 			if _, err := file.Seek(0, 2); err != nil {
-				println("Failed to seek to the end of a log file:", err.Error())
+				logFileTrace.Errorf("Failed to seek to the end of a log file: %s.", err.Error())
 				initialized = false
 			}
 
@@ -389,7 +392,7 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 		}
 
 		if nextOffset <= offset {
-			println("Next offset must be greater than the current: nextOffset =", nextOffset, "offset =", offset)
+			logFileTrace.Errorf("Next offset must be greater than the current: nextOffset=%d, offset=%d.", nextOffset, offset)
 			panic("Next offset must be greater than the current.")
 		}
 
@@ -433,7 +436,7 @@ func (log *LogFile) run(file *os.File) {
 			buf, prevPayloadLen = writeEntry(buf, ent, prevPayloadLen, backHop)
 
 			if _, err := file.Write(buf); err != nil {
-				println("Failed to wrtie log entry:", err.Error())
+				logFileTrace.Errorf("Failed to wrtie log entry: %s.", err.Error())
 				currentOffset, _ = file.Seek(0, 1)
 
 			} else {

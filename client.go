@@ -18,10 +18,13 @@ package main
 
 import (
 	"container/list"
+	"github.com/dbratus/loghub/trace"
 	"net"
 	"runtime"
 	"sync/atomic"
 )
+
+var clientTrace = trace.New("LogHubClient")
 
 type logHubClient struct {
 	connPoolSize   int
@@ -60,7 +63,7 @@ func (cli *logHubClient) connPool() {
 		connections.PushBack(conn)
 		totalConnections++
 	} else {
-		println("Failed to connect to", cli.address, ":", err.Error())
+		clientTrace.Errorf("Failed to connect to %s: %s", cli.address, err.Error())
 	}
 
 	for {
@@ -75,7 +78,7 @@ func (cli *logHubClient) connPool() {
 							connChan <- conn
 							totalConnections++
 						} else {
-							println("Failed to connect to", cli.address, ":", err.Error())
+							clientTrace.Errorf("Failed to connect to %s: %s.", cli.address, err.Error())
 							close(connChan)
 						}
 					} else {
@@ -148,7 +151,7 @@ func (cli *logHubClient) Write(entries chan *IncomingLogEntryJSON) {
 
 	header := MessageHeaderJSON{ActionWrite}
 	if err := writer.WriteJSON(&header); err != nil {
-		println("Failed to write message", err.Error())
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
 		atomic.AddInt32(cli.activeOps, -1)
 		return
@@ -160,7 +163,7 @@ func (cli *logHubClient) Write(entries chan *IncomingLogEntryJSON) {
 		for ent := range entries {
 			if ok {
 				if err := writer.WriteJSON(ent); err != nil {
-					println("Failed to write message", err.Error())
+					clientTrace.Errorf("Failed to write message: %s.", err.Error())
 					ok = false
 				}
 			}
@@ -168,7 +171,7 @@ func (cli *logHubClient) Write(entries chan *IncomingLogEntryJSON) {
 
 		if ok {
 			if err := writer.WriteDelimiter(); err != nil {
-				println("Failed to write message", err.Error())
+				clientTrace.Errorf("Failed to write message: %s.", err.Error())
 				cli.brokenConnChan <- conn
 			} else {
 				cli.putConnChan <- conn
@@ -198,7 +201,7 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 
 	header := MessageHeaderJSON{ActionRead}
 	if err := writer.WriteJSON(&header); err != nil {
-		println("Failed to write message", err.Error())
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
 		atomic.AddInt32(cli.activeOps, -1)
 		return
@@ -210,7 +213,7 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 		for q := range queries {
 			if ok {
 				if err := writer.WriteJSON(q); err != nil {
-					println("Failed to write message", err.Error())
+					clientTrace.Errorf("Failed to write message: %s.", err.Error())
 					ok = false
 				}
 			}
@@ -218,7 +221,7 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 
 		if ok {
 			if err := writer.WriteDelimiter(); err != nil {
-				println("Failed to write message", err.Error())
+				clientTrace.Errorf("Failed to write message: %s.", err.Error())
 				cli.brokenConnChan <- conn
 			} else {
 				reader := NewJSONStreamReader(conn)
@@ -228,7 +231,7 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 
 					if err := reader.ReadJSON(ent); err != nil {
 						if err != ErrStreamDelimiter {
-							println("Failed to read message", err.Error())
+							clientTrace.Errorf("Failed to read message: %s.", err.Error())
 							ok = false
 						}
 						break
@@ -269,7 +272,7 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 
 	header := MessageHeaderJSON{ActionInternalRead}
 	if err := writer.WriteJSON(&header); err != nil {
-		println("Failed to write message", err.Error())
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
 		atomic.AddInt32(cli.activeOps, -1)
 		return
@@ -281,7 +284,7 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 		for q := range queries {
 			if ok {
 				if err := writer.WriteJSON(q); err != nil {
-					println("Failed to write message", err.Error())
+					clientTrace.Errorf("Failed to write message: %s.", err.Error())
 					ok = false
 				}
 			}
@@ -289,7 +292,7 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 
 		if ok {
 			if err := writer.WriteDelimiter(); err != nil {
-				println("Failed to write message", err.Error())
+				clientTrace.Errorf("Failed to write message: %s.", err.Error())
 				cli.brokenConnChan <- conn
 			} else {
 				reader := NewJSONStreamReader(conn)
@@ -299,7 +302,7 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 
 					if err := reader.ReadJSON(ent); err != nil {
 						if err != ErrStreamDelimiter {
-							println("Failed to read message", err.Error())
+							clientTrace.Errorf("Failed to read message: %s.", err.Error())
 							ok = false
 						}
 						break
