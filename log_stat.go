@@ -36,15 +36,15 @@ type LogStat struct {
 	Port            int
 }
 
-func startLogStatSender(addr string, log LogManager, port int, resistanceLevel int64, sendInterval time.Duration) (func(), error) {
+func startLogStatSender(hubAddr string, log LogManager, port int, resistanceLevel int64, sendInterval time.Duration) (func(), error) {
 	closeChan := make(chan chan bool)
 
-	var addrUdp *net.UDPAddr
+	var hubAddrUdp *net.UDPAddr
 
-	if a, err := net.ResolveUDPAddr("udp4", addr); err != nil {
+	if a, err := net.ResolveUDPAddr("udp4", hubAddr); err != nil {
 		return nil, err
 	} else {
-		addrUdp = a
+		hubAddrUdp = a
 	}
 
 	var conn *net.UDPConn
@@ -70,7 +70,7 @@ func startLogStatSender(addr string, log LogManager, port int, resistanceLevel i
 			if err := encoder.Encode(stat); err != nil {
 				logStatSenderTrace.Errorf("Failed to encode LogStat: %s.", err.Error())
 			} else {
-				if n, err := conn.WriteToUDP(msgBuf.Bytes(), addrUdp); err != nil {
+				if n, err := conn.WriteToUDP(msgBuf.Bytes(), hubAddrUdp); err != nil {
 					logStatSenderTrace.Errorf("Failed to write LogStat: %s.", err.Error())
 				} else {
 					logStatSenderTrace.Debugf("%d of %d bytes sent.", n, msgBuf.Len())

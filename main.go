@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -62,7 +63,10 @@ func printCommands() {
 func logCommand(args []string) {
 	flags := flag.NewFlagSet("log", flag.ExitOnError)
 	address := flags.String("listen", ":10000", "Address and port to listen.")
-	home := flags.String("home", "", "Home directory.")
+	home := flags.String("home", "", "Home directory.") //TODO: Get default from environment variable.
+	hub := flags.String("hub", "", "Hub address.")
+	resistanceLevel := flags.Int64("resist", 1024, "Resistance level in megabytes.")
+	statInerval := flags.Duration("stat", time.Second*10, "Status sending interval.")
 
 	flags.Parse(args)
 
@@ -76,9 +80,34 @@ func logCommand(args []string) {
 		os.Exit(1)
 	}
 
+	if *hub == "" {
+		println("Hub is not specified.")
+		os.Exit(1)
+	}
+
+	var port int
+
+	if addr, err := net.ResolveTCPAddr("tcp", *address); err != nil {
+		println("Failed to resolve the address:", err.Error(), ".")
+		os.Exit(1)
+	} else {
+		port = addr.Port
+	}
+
+	logManager := NewDefaultLogManager(*home)
+
+	var stopLogStatSender func()
+
+	if s, err := startLogStatSender(*hub, logManager, port, *resistanceLevel, *statInerval); err != nil {
+		println("Failed to start stat sender:", err.Error(), ".")
+		os.Exit(1)
+	} else {
+		stopLogStatSender = s
+	}
+
 	var stopServer func()
 
-	if s, err := startServer(*address, NewLogMessageHandler(NewDefaultLogManager(*home))); err != nil {
+	if s, err := startServer(*address, NewLogMessageHandler(logManager)); err != nil {
 		println("Failed to start server:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -90,6 +119,7 @@ func logCommand(args []string) {
 
 	for _ = range signals {
 		stopServer()
+		stopLogStatSender()
 		break
 	}
 }
@@ -183,7 +213,7 @@ func getCommand(args []string) {
 
 func putCommand(args []string) {
 	flags := flag.NewFlagSet("get", flag.ExitOnError)
-	addr := flags.String("addr", "", "Address and port of log or hub.")
+	addr := flags.String("addr", "", "Address and port of log.")
 
 	flags.Parse(args)
 
