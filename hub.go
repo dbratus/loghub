@@ -125,8 +125,10 @@ func (h *defaultHub) run() {
 		hubTrace.Debugf("Got stat from %s: SZ=%d, RL=%d.", addr, cmd.stat.Size, cmd.stat.ResistanceLevel)
 
 		if log, found := logs[addr]; found {
-			log.stat = cmd.stat
-			log.timeout = time.Now().Add(logCloseTimeout)
+			if cmd.stat.Timestamp > log.stat.Timestamp {
+				log.stat = cmd.stat
+				log.timeout = time.Now().Add(logCloseTimeout)
+			}
 		} else {
 			logs[addr] = &logInfo{
 				cmd.stat,

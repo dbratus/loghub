@@ -20,6 +20,7 @@ import (
 	"net"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func TestHubSetStatRead(t *testing.T) {
@@ -41,7 +42,7 @@ func TestHubSetStatRead(t *testing.T) {
 			closeFuncs = append(closeFuncs, c)
 		}
 
-		hub.SetLogStat(net.IPv4(127, 0, 0, 1), &LogStat{0, 0, port})
+		hub.SetLogStat(net.IPv4(127, 0, 0, 1), &LogStat{time.Now().UnixNano(), 0, 0, port})
 	}
 
 	defer func() {

@@ -44,12 +44,6 @@ type LogQuery struct {
 	Source      string
 }
 
-type LogStat struct {
-	Size            int64
-	ResistanceLevel int64
-	Port            int
-}
-
 type LogWriter interface {
 	WriteLog(*LogEntry)
 }
