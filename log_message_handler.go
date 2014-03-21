@@ -19,7 +19,7 @@ func (mh *logMessageHandler) Write(entries chan *IncomingLogEntryJSON) {
 	}
 }
 
-func (mh *logMessageHandler) queryMultiple(queries chan *LogQueryJSON) chan *LogEntry {
+func (mh *logMessageHandler) query(queries chan *LogQueryJSON) chan *LogEntry {
 	var results chan *LogEntry = nil
 
 	for qJSON := range queries {
@@ -43,7 +43,7 @@ func (mh *logMessageHandler) queryMultiple(queries chan *LogQueryJSON) chan *Log
 }
 
 func (mh *logMessageHandler) Read(queries chan *LogQueryJSON, resultJSON chan *OutgoingLogEntryJSON) {
-	result := mh.queryMultiple(queries)
+	result := mh.query(queries)
 
 	if result != nil {
 		for ent := range result {
@@ -55,7 +55,7 @@ func (mh *logMessageHandler) Read(queries chan *LogQueryJSON, resultJSON chan *O
 }
 
 func (mh *logMessageHandler) InternalRead(queries chan *LogQueryJSON, resultJSON chan *InternalLogEntryJSON) {
-	result := mh.queryMultiple(queries)
+	result := mh.query(queries)
 
 	if result != nil {
 		for ent := range result {

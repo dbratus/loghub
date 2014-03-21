@@ -88,7 +88,7 @@ func logCommand(args []string) {
 	var stopLogStatSender func()
 
 	if s, err := startLogStatSender(*hub, logManager, port, *resistanceLevel, *statInerval); err != nil {
-		println("Failed to start stat sender:", err.Error(), ".")
+		println("Failed to start the stat sender:", err.Error(), ".")
 		os.Exit(1)
 	} else {
 		stopLogStatSender = s
@@ -97,7 +97,7 @@ func logCommand(args []string) {
 	var stopServer func()
 
 	if s, err := startServer(*address, NewLogMessageHandler(logManager)); err != nil {
-		println("Failed to start server:", err.Error(), ".")
+		println("Failed to start the server:", err.Error(), ".")
 		os.Exit(1)
 	} else {
 		stopServer = s
@@ -114,7 +114,37 @@ func logCommand(args []string) {
 }
 
 func hubCommand(args []string) {
+	flags := flag.NewFlagSet("hub", flag.ExitOnError)
+	address := flags.String("listen", ":10000", "Address and port to listen.")
 
+	hub := NewDefaultHub()
+
+	var stopLogStatReceiver func()
+
+	if s, err := startLogStatReceiver(*address, hub); err != nil {
+		println("Failed to start the stat receiver:", err.Error(), ".")
+		os.Exit(1)
+	} else {
+		stopLogStatReceiver = s
+	}
+
+	var stopServer func()
+
+	if s, err := startServer(*address, NewHubMessageHandler(hub)); err != nil {
+		println("Failed to start the server:", err.Error(), ".")
+		os.Exit(1)
+	} else {
+		stopServer = s
+	}
+
+	signals := make(chan os.Signal)
+	signal.Notify(signals, os.Kill, os.Interrupt)
+
+	for _ = range signals {
+		stopServer()
+		stopLogStatReceiver()
+		break
+	}
 }
 
 func getCommand(args []string) {
