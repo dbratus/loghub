@@ -1,19 +1,8 @@
-/*
-	This file is part of LogHub.
+// Copyright (C) 2014 Dmitry Bratus
+//
+// The use of this source code is governed by the license
+// that can be found in the LICENSE file.
 
-	LogHub is free software: you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation, either version 3 of the License, or
-	(at your option) any later version.
-
-	LogHub is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with LogHub.  If not, see <http://www.gnu.org/licenses/>.
-*/
 package main
 
 import (
@@ -55,78 +44,78 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 		}
 
 		switch header.Action {
-			case ActionWrite:
-				entChan := make(chan *IncomingLogEntryJSON)
+		case ActionWrite:
+			entChan := make(chan *IncomingLogEntryJSON)
 
-				go handler.Write(entChan)
+			go handler.Write(entChan)
 
-				for {
-					ent := new(IncomingLogEntryJSON)
+			for {
+				ent := new(IncomingLogEntryJSON)
 
-					if err := reader.ReadJSON(ent); err != nil {
-						close(entChan)
+				if err := reader.ReadJSON(ent); err != nil {
+					close(entChan)
 
-						if err != ErrStreamDelimiter {
-							conn.Close()
-							return
-						}
-
-						break
+					if err != ErrStreamDelimiter {
+						conn.Close()
+						return
 					}
 
-					entChan <- ent
-				}
-			case ActionRead:
-				qChan := make(chan *LogQueryJSON)
-				entChan := make(chan *OutgoingLogEntryJSON)
-
-				go handler.Read(qChan, entChan)
-
-				if !readLogQueryJSONChannel(reader, handler, qChan) {
-					conn.Close()
-					return
+					break
 				}
 
-				continueWriting := true
+				entChan <- ent
+			}
+		case ActionRead:
+			qChan := make(chan *LogQueryJSON)
+			entChan := make(chan *OutgoingLogEntryJSON)
 
-				for ent := range entChan {
-					if continueWriting {
-						if err := writer.WriteJSON(ent); err != nil {
-							conn.Close()
-							continueWriting = false
-						}
-					}
-				}
+			go handler.Read(qChan, entChan)
 
+			if !readLogQueryJSONChannel(reader, handler, qChan) {
+				conn.Close()
+				return
+			}
+
+			continueWriting := true
+
+			for ent := range entChan {
 				if continueWriting {
-					writer.WriteDelimiter()
-				}
-
-			case ActionInternalRead:
-				qChan := make(chan *LogQueryJSON)
-				entChan := make(chan *InternalLogEntryJSON)
-
-				go handler.InternalRead(qChan, entChan)
-
-				if !readLogQueryJSONChannel(reader, handler, qChan) {
-					conn.Close()
-					return
-				}
-
-				continueWriting := true
-
-				for ent := range entChan {
-					if continueWriting {
-						if err := writer.WriteJSON(ent); err != nil {
-							conn.Close()
-							continueWriting = false
-						}
+					if err := writer.WriteJSON(ent); err != nil {
+						conn.Close()
+						continueWriting = false
 					}
 				}
+			}
 
+			if continueWriting {
+				writer.WriteDelimiter()
+			}
+
+		case ActionInternalRead:
+			qChan := make(chan *LogQueryJSON)
+			entChan := make(chan *InternalLogEntryJSON)
+
+			go handler.InternalRead(qChan, entChan)
+
+			if !readLogQueryJSONChannel(reader, handler, qChan) {
+				conn.Close()
+				return
+			}
+
+			continueWriting := true
+
+			for ent := range entChan {
 				if continueWriting {
-					writer.WriteDelimiter()
+					if err := writer.WriteJSON(ent); err != nil {
+						conn.Close()
+						continueWriting = false
+					}
 				}
+			}
+
+			if continueWriting {
+				writer.WriteDelimiter()
+			}
 		}
 	}
 }
@@ -141,7 +130,7 @@ func readLogQueryJSONChannel(reader JSONStreamReader, handler MessageHandler, qC
 			if err != ErrStreamDelimiter {
 				return false
 			}
-			
+
 			break
 		}
 
