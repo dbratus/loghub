@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/dbratus/loghub/rnglock"
 	"github.com/dbratus/loghub/trace"
 	"os"
 	"regexp"
@@ -95,9 +96,9 @@ func getLogFileNameForEntry(entry *LogEntry) string {
 	return getSourceDirName(entry.Source) + "/" + getFileNameForTimestamp(entry.Timestamp)
 }
 
-func initLogManager(home string) (logSources map[string]bool, size int64, initialized bool) {
+func initLogManager(home string) (logSources map[string]*rnglock.RangeLock, size int64, initialized bool) {
 	initialized = true
-	logSources = make(map[string]bool, 0)
+	logSources = make(map[string]*rnglock.RangeLock)
 	size = 0
 
 	if homeDir, err := os.Open(home); err == nil {
@@ -106,7 +107,7 @@ func initLogManager(home string) (logSources map[string]bool, size int64, initia
 		if dirnames, err := homeDir.Readdirnames(0); err == nil {
 			for _, dir := range dirnames {
 				if src, err := getSourceNameByDir(dir); err == nil {
-					logSources[src] = true
+					logSources[src] = rnglock.New()
 				}
 
 				if srcDir, err := os.Open(home + "/" + dir); err == nil {
@@ -220,6 +221,21 @@ func (mg *defaultLogManager) run() {
 
 	queryLogSources := func(sources []string, cmd readLogCmd) {
 		fileNames := make(chan string)
+		locksHold := make(map[string]rnglock.LockId)
+
+		for _, src := range sources {
+			if slock, found := logSources[src]; found {
+				locksHold[src] = slock.Lock(cmd.query.From, cmd.query.To, true)
+			}
+		}
+
+		unlockAll := func() {
+			for src, lck := range locksHold {
+				if slock, found := logSources[src]; found {
+					slock.Unlock(lck)
+				}
+			}
+		}
 
 		go getLogFileNamesForRange(sources, cmd.query.From, cmd.query.To, fileNames)
 
@@ -227,10 +243,9 @@ func (mg *defaultLogManager) run() {
 
 		for fileName := range fileNames {
 			if logFile, err := getLogFile(fileName, false); err == nil {
-				subQuery := *cmd.query
 				res := make(chan *LogEntry)
 
-				logFile.ReadLog(&subQuery, res)
+				logFile.ReadLog(cmd.query, res)
 
 				if results == nil {
 					results = res
@@ -246,15 +261,15 @@ func (mg *defaultLogManager) run() {
 			}
 		}
 
-		go func() {
-			if results != nil {
-				for ent := range results {
-					cmd.entries <- ent
-				}
-			}
-
+		if results != nil {
+			go func() {
+				ForwardLog(results, cmd.entries)
+				unlockAll()
+			}()
+		} else {
 			close(cmd.entries)
-		}()
+			unlockAll()
+		}
 	}
 
 	onWrite := func(ent *LogEntry) {
@@ -262,9 +277,12 @@ func (mg *defaultLogManager) run() {
 			ent.Timestamp = time.Now().UnixNano()
 			logFileToWrite := getLogFileNameForEntry(ent)
 
+			if _, found := logSources[ent.Source]; !found {
+				logSources[ent.Source] = rnglock.New()
+			}
+
 			if logFile, err := getLogFile(logFileToWrite, true); err == nil {
 				logFile.WriteLog(ent)
-				logSources[ent.Source] = true
 			} else {
 				logManagerTrace.Errorf("Failed to obtain log file: %s.", err.Error())
 			}
