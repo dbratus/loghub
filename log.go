@@ -17,6 +17,9 @@ const (
 
 const PlainMessageMaxLength = 512
 
+const maxTimestamp = int64(^uint64(0) ^ 1<<63)
+const minTimestamp = -int64(^uint64(0)^1<<63) - 1
+
 type LogEntry struct {
 	Timestamp int64
 	Severity  int

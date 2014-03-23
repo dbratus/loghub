@@ -63,10 +63,10 @@ func rangeLockTest(t *testing.T, l1Read, l2Read, mustCollide bool, iterCnt int) 
 	defer lock.Close()
 
 	for i := 0; i < iterCnt; i++ {
-		lockId := lock.Lock(1, 4, l1Read)
+		lockId := lock.Lock(1, 1, 4, l1Read)
 
 		go func() {
-			lockId := lock.Lock(2, 3, l2Read)
+			lockId := lock.Lock(2, 2, 3, l2Read)
 			defer lock.Unlock(lockId)
 			atomic.AddInt32(cnt, 1)
 		}()
@@ -101,4 +101,24 @@ func TestRangeLocks(t *testing.T) {
 	rangeLockTest(t, true, false, true, 10)
 	rangeLockTest(t, false, true, true, 10)
 	rangeLockTest(t, false, false, true, 10)
+}
+
+func TestReenterability(t *testing.T) {
+	cnt := new(int32)
+	lock := New()
+	defer lock.Close()
+
+	go func() {
+		lock.Lock(1, 1, 2, false)
+		atomic.AddInt32(cnt, 1)
+		lock.Lock(1, 1, 2, false)
+		atomic.AddInt32(cnt, 1)
+	}()
+
+	<-time.After(time.Millisecond * 10)
+
+	if atomic.LoadInt32(cnt) != int32(2) {
+		t.Error("Reenter failed.")
+		t.FailNow()
+	}
 }

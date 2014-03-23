@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -104,6 +105,19 @@ func getFileNameForTimestamp(timestamp int64) string {
 	return fmt.Sprintf("%.4d.%.2d.%.2d.%.2d", t.Year(), int(t.Month()), t.Day(), t.Hour())
 }
 
+func getRangeByFileName(fileName string) (start int64, end int64) {
+	if st, err := time.Parse("2006.01.02.15", fileName); err != nil {
+		start = minTimestamp
+		end = maxTimestamp
+
+	} else {
+		start = st.UnixNano()
+		end = st.Add(time.Hour - time.Millisecond).UnixNano()
+	}
+
+	return
+}
+
 func getLogFileNameForEntry(entry *LogEntry) string {
 	return getSourceDirName(entry.Source) + "/" + getFileNameForTimestamp(entry.Timestamp)
 }
@@ -180,12 +194,23 @@ func getLogFileNamesForRange(sources []string, minTimestamp int64, maxTimestamp 
 	close(fileNames)
 }
 
+func getMaxOpenFiles() uint64 {
+	var lim syscall.Rlimit
+	syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim)
+	return (lim.Cur / 4) * 3
+}
+
 func (mg *defaultLogManager) run() {
 	logSources, closedSize, initialized := initLogManager(mg.home)
 	openLogFiles := make(map[string]LogManager)
 	logFileTimeouts := make(map[string]*int64)
 	closeLogFileChan := make(chan string)
-	closeLogFileChanClosed := new(int32)
+
+	maxOpenFiles := getMaxOpenFiles()
+
+	opCnt := int64(0)
+
+	logManagerTrace.Debugf("Max. open files %d.", maxOpenFiles)
 
 	filterLogSources := func(srcFilter string) []string {
 		sources := make([]string, 0, 100)
@@ -219,8 +244,18 @@ func (mg *defaultLogManager) run() {
 			}
 		}
 
-		if atomic.LoadInt32(closeLogFileChanClosed) == 0 {
-			closeLogFileChan <- fileName
+		closeLogFileChan <- fileName
+	}
+
+	onClose := func(logFileToClose string) {
+		if logFile, found := openLogFiles[logFileToClose]; found {
+			//Tracking the closed files' size.
+			closedSize += logFile.Size()
+
+			logFile.Close()
+
+			delete(openLogFiles, logFileToClose)
+			delete(logFileTimeouts, logFileToClose)
 		}
 	}
 
@@ -228,6 +263,7 @@ func (mg *defaultLogManager) run() {
 		if logFile, found := openLogFiles[fileName]; !found {
 			srcDir := mg.home + "/" + fileName[0:strings.LastIndex(fileName, "/")]
 
+			//Creating source directory if not exists.
 			if srcDirStat, err := os.Stat(srcDir); err != nil {
 				if os.IsNotExist(err) && create {
 					if err = os.Mkdir(srcDir, 0777); err != nil {
@@ -242,9 +278,41 @@ func (mg *defaultLogManager) run() {
 				}
 			}
 
-			//TODO: Respect resource limits.
+			//If the resource limit on open files is hit,
+			//trying to close one of them.
+			if uint64(len(openLogFiles)) == maxOpenFiles {
+				closestTimeout := int64(0)
+				logFileToClose := ""
+
+				//Selecting the file with the closest timeout.
+				for fileName, timeout := range logFileTimeouts {
+					if logFileToClose == "" || *timeout < closestTimeout {
+						logFileToClose = fileName
+						closestTimeout = *timeout
+					}
+				}
+
+				src, fileName := parseLogFileName(logFileToClose)
+
+				//Locking the file's range and closing the file.
+				if slock, found := logSources[src]; found {
+					start, end := getRangeByFileName(fileName)
+
+					//logManagerTrace.Debugf("Locking range %s %d-%d for write.", src, start, end)
+					lck := slock.Lock(opCnt, start, end, false)
+
+					onClose(logFileToClose)
+
+					//logManagerTrace.Debugf("Unlocking range %s %d-%d.", src, start, end)
+					slock.Unlock(lck)
+				}
+			}
+
+			//Opening the file.
 			if logFile, err := OpenLogFile(mg.home+"/"+fileName, create); err == nil {
 				openLogFiles[fileName] = logFile
+
+				//Tracking the closed files' size.
 				closedSize -= logFile.Size()
 
 				timeout := new(int64)
@@ -272,13 +340,15 @@ func (mg *defaultLogManager) run() {
 
 		for _, src := range sources {
 			if slock, found := logSources[src]; found {
-				locksHold[src] = slock.Lock(cmd.query.From, cmd.query.To, true)
+				//logManagerTrace.Debugf("Locking range %s %d-%d for read.", src, cmd.query.From, cmd.query.To)
+				locksHold[src] = slock.Lock(opCnt, cmd.query.From, cmd.query.To, true)
 			}
 		}
 
 		unlockAll := func() {
 			for src, lck := range locksHold {
 				if slock, found := logSources[src]; found {
+					//logManagerTrace.Debugf("Unlocking range %s %d-%d.", src, cmd.query.From, cmd.query.To)
 					slock.Unlock(lck)
 				}
 			}
@@ -387,15 +457,6 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
-	onClose := func(logFileToClose string) {
-		if logFile, found := openLogFiles[logFileToClose]; found {
-			closedSize += logFile.Size()
-			logFile.Close()
-			delete(openLogFiles, logFileToClose)
-			delete(logFileTimeouts, logFileToClose)
-		}
-	}
-
 	onTruncate := func(cmd truncateLogCmd) {
 		sources := filterLogSources(cmd.source)
 
@@ -404,7 +465,7 @@ func (mg *defaultLogManager) run() {
 
 			for _, src := range sources {
 				if slock, found := logSources[src]; found {
-					lck := slock.Lock(0, cmd.limit, false)
+					lck := slock.Lock(opCnt, minTimestamp, cmd.limit, false)
 
 					for fileName, _ := range openLogFiles {
 						fileSrc, fileTs := parseLogFileName(fileName)
@@ -421,6 +482,8 @@ func (mg *defaultLogManager) run() {
 	}
 
 	for {
+		opCnt++
+
 		select {
 		case ent, ok := <-mg.writeChan:
 			if ok {
@@ -448,6 +511,8 @@ func (mg *defaultLogManager) run() {
 			}
 
 		case ack := <-mg.closeChan:
+			logManagerTrace.Debug("Closing")
+
 			for ent := range mg.writeChan {
 				onWrite(ent)
 			}
@@ -459,9 +524,6 @@ func (mg *defaultLogManager) run() {
 			for sz := range mg.sizeChan {
 				onSize(sz)
 			}
-
-			atomic.AddInt32(closeLogFileChanClosed, 1)
-			close(closeLogFileChan)
 
 			for _, logFile := range openLogFiles {
 				logFile.Close()

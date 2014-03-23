@@ -6,6 +6,7 @@
 package main
 
 import (
+	"github.com/dbratus/loghub/trace"
 	"os"
 	"testing"
 	"time"
@@ -132,12 +133,15 @@ func TestWriteReadLog(t *testing.T) {
 }
 
 func TestTruncate(t *testing.T) {
+	trace.SetTraceLevel(trace.LevelDebug)
+	defer trace.SetTraceLevel(trace.LevelInfo)
+
 	makeTestLogHome()
 	defer deleteTestLogHome()
 
 	sources := [...]string{"src1", "src2", "src3"}
 
-	entriesPerSource := 12
+	entriesPerSource := 128
 	logManager := NewDefaultLogManager(getTestLogHome())
 
 	baseTs := time.Now()

@@ -5,6 +5,10 @@
 
 package rnglock
 
+import (
+	"time"
+)
+
 type RangeLock struct {
 	lockRequests   chan lockRequest
 	unlockRequests chan LockId
@@ -19,10 +23,11 @@ type rng struct {
 type LockId int64
 
 const InvalidLockId = LockId(-1)
-
 const blocksCapacity = 10
+const lockTimeout = time.Second * 10
 
 type lockRequest struct {
+	owner  int64
 	rng    rng
 	isRead bool
 	result chan LockId
@@ -42,8 +47,9 @@ func New() *RangeLock {
 
 func (rl *RangeLock) processRequests() {
 	type lockData struct {
-		id  LockId
-		rng rng
+		id    LockId
+		owner int64
+		rng   rng
 
 		//The channel from which the lock owner
 		//gets the lock id. As soon as the id is
@@ -70,6 +76,7 @@ func (rl *RangeLock) processRequests() {
 		//Creating new lock.
 		newLock := &lockData{
 			nextLockId,
+			req.owner,
 			req.rng,
 			req.result,
 			0,
@@ -86,7 +93,7 @@ func (rl *RangeLock) processRequests() {
 		//Looking for conflicting locks.
 		var cur *lockData
 		for cur = locks; cur != nil; cur = cur.next {
-			if cur.rng.overlaps(req.rng) && !(cur.isRead && req.isRead) {
+			if cur.owner != req.owner && cur.rng.overlaps(req.rng) && !(cur.isRead && req.isRead) {
 				newLock.blockersCnt++
 				cur.blocks = append(cur.blocks, newLock)
 			}
@@ -158,14 +165,20 @@ func (rl *RangeLock) processRequests() {
 	}
 }
 
-func (rl *RangeLock) Lock(start, end int64, isRead bool) LockId {
+func (rl *RangeLock) Lock(owner, start, end int64, isRead bool) LockId {
 	if start >= end {
 		return InvalidLockId
 	}
 
 	result := make(chan LockId)
-	rl.lockRequests <- lockRequest{rng{start, end}, isRead, result}
-	return <-result
+	rl.lockRequests <- lockRequest{owner, rng{start, end}, isRead, result}
+
+	select {
+	case <-time.After(lockTimeout):
+		return InvalidLockId
+	case r := <-result:
+		return r
+	}
 }
 
 func (rl *RangeLock) Unlock(lock LockId) {

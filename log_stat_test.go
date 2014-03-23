@@ -32,14 +32,14 @@ func (mg *logManagerForStatTest) Size() int64 {
 }
 
 type hubForStatTest struct {
-	stat *LogStat
+	stat chan *LogStat
 }
 
 func (h *hubForStatTest) ReadLog([]*LogQuery, chan *LogEntry) {
 }
 
 func (h *hubForStatTest) SetLogStat(addr net.IP, stat *LogStat) {
-	h.stat = stat
+	h.stat <- stat
 }
 
 func (h *hubForStatTest) Close() {
@@ -58,7 +58,7 @@ func TestLogStatSenderReceiver(t *testing.T) {
 		defer cl()
 	}
 
-	hub := new(hubForStatTest)
+	hub := &hubForStatTest{make(chan *LogStat)}
 
 	if cl, err := startLogStatReceiver(":10000", hub); err != nil {
 		t.Errorf("Failed to start LogStat receiver: %s.", err.Error())
@@ -67,22 +67,21 @@ func TestLogStatSenderReceiver(t *testing.T) {
 		defer cl()
 	}
 
-	time.Sleep(time.Millisecond * 100)
-
-	if hub.stat == nil {
+	select {
+	case <-time.After(time.Second * 10):
 		t.Error("LogStat has not arrived.")
 		t.FailNow()
-	}
+	case stat := <-hub.stat:
+		if stat.Port != senderPort {
+			t.Errorf("Wrong LogStat port. Expected %d, got %d.", senderPort, stat.Port)
+		}
 
-	if hub.stat.Port != senderPort {
-		t.Errorf("Wrong LogStat port. Expected %d, got %d.", senderPort, hub.stat.Port)
-	}
+		if stat.ResistanceLevel != resistanceLevel {
+			t.Errorf("Wrong LogStat resistence level. Expected %d, got %d.", resistanceLevel, stat.ResistanceLevel)
+		}
 
-	if hub.stat.ResistanceLevel != resistanceLevel {
-		t.Errorf("Wrong LogStat resistence level. Expected %d, got %d.", resistanceLevel, hub.stat.ResistanceLevel)
-	}
-
-	if hub.stat.Size != logManager.size {
-		t.Errorf("Wrong LogStat size. Expected %d, got %d.", logManager.size, hub.stat.Size)
+		if stat.Size != logManager.size {
+			t.Errorf("Wrong LogStat size. Expected %d, got %d.", logManager.size, stat.Size)
+		}
 	}
 }
