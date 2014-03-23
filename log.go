@@ -49,6 +49,8 @@ type Logger interface {
 type LogManager interface {
 	Logger
 
+	Truncate(limit int64, source string)
+
 	Close()
 	Size() int64
 }

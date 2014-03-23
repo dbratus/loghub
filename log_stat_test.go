@@ -24,6 +24,9 @@ func (mg *logManagerForStatTest) ReadLog(*LogQuery, chan *LogEntry) {
 func (mg *logManagerForStatTest) Close() {
 }
 
+func (mg *logManagerForStatTest) Truncate(int64, string) {
+}
+
 func (mg *logManagerForStatTest) Size() int64 {
 	return mg.size
 }
@@ -49,7 +52,7 @@ func TestLogStatSenderReceiver(t *testing.T) {
 	resistanceLevel := int64(20000)
 
 	if cl, err := startLogStatSender(":10000", logManager, senderPort, resistanceLevel, time.Second); err != nil {
-		t.Errorf("Failed to start LogStat sender.", err.Error())
+		t.Errorf("Failed to start LogStat sender: %s.", err.Error())
 		t.FailNow()
 	} else {
 		defer cl()
@@ -58,7 +61,7 @@ func TestLogStatSenderReceiver(t *testing.T) {
 	hub := new(hubForStatTest)
 
 	if cl, err := startLogStatReceiver(":10000", hub); err != nil {
-		t.Errorf("Failed to start LogStat receiver.", err.Error())
+		t.Errorf("Failed to start LogStat receiver: %s.", err.Error())
 		t.FailNow()
 	} else {
 		defer cl()

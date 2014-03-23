@@ -130,3 +130,71 @@ func TestWriteReadLog(t *testing.T) {
 
 	logManager.Close()
 }
+
+func TestTruncate(t *testing.T) {
+	makeTestLogHome()
+	defer deleteTestLogHome()
+
+	sources := [...]string{"src1", "src2", "src3"}
+
+	entriesPerSource := 12
+	logManager := NewDefaultLogManager(getTestLogHome())
+
+	baseTs := time.Now()
+
+	for _, src := range sources {
+		for i := 0; i < entriesPerSource; i++ {
+			ent := &LogEntry{
+				baseTs.Add(time.Hour * time.Duration(i)).UnixNano(),
+				1,
+				src,
+				EncodingPlain,
+				[]byte("Message"),
+			}
+
+			logManager.WriteLog(ent)
+		}
+	}
+
+	qResult := make(chan *LogEntry)
+	logManager.ReadLog(&LogQuery{
+		baseTs.UnixNano(),
+		baseTs.Add(time.Hour * time.Duration(entriesPerSource)).UnixNano(),
+		1,
+		1,
+		"src.",
+	}, qResult)
+	entCnt := 0
+
+	for _ = range qResult {
+		entCnt++
+	}
+
+	if entCnt < entriesPerSource*len(sources) {
+		t.Errorf("Failed to read entries from log manager: expected %d, got %d.", entriesPerSource*len(sources), entCnt)
+		t.FailNow()
+	}
+
+	logManager.Truncate(baseTs.Add(time.Hour*time.Duration(entriesPerSource/2)).UnixNano(), "src.")
+
+	qResult = make(chan *LogEntry)
+	logManager.ReadLog(&LogQuery{
+		baseTs.UnixNano(),
+		baseTs.Add(time.Hour * time.Duration(entriesPerSource)).UnixNano(),
+		1,
+		1,
+		"src.",
+	}, qResult)
+	entCnt = 0
+
+	for _ = range qResult {
+		entCnt++
+	}
+
+	if entCnt > (entriesPerSource/2)*len(sources) {
+		t.Errorf("Failed to read entries from log manager: expected %d, got %d.", (entriesPerSource/2)*len(sources), entCnt)
+		t.FailNow()
+	}
+
+	logManager.Close()
+}
