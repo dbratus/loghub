@@ -48,6 +48,10 @@ const (
 	//The response is a sequnce of InternalLogEntryJSON.
 	//<InternalLogEntryJSON>\0<InternalLogEntryJSON>\0...\0<InternalLogEntryJSON>\0\0
 	ActionInternalRead = "iread"
+
+	//The body is \0 terminated TruncateJSON.
+	//The action has no response.
+	ActionTruncate = "truncate"
 )
 
 //The message header that each message starts with.
@@ -101,11 +105,18 @@ type LogQueryJSON struct {
 	Src    string
 }
 
+//The truncation command.
+type TruncateJSON struct {
+	Src string
+	Lim int64
+}
+
 //The interface which a protocol message handler must implement.
 type MessageHandler interface {
 	Write(chan *IncomingLogEntryJSON)
 	Read(chan *LogQueryJSON, chan *OutgoingLogEntryJSON)
 	InternalRead(chan *LogQueryJSON, chan *InternalLogEntryJSON)
+	Truncate(*TruncateJSON)
 	Close()
 }
 

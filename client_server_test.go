@@ -12,6 +12,9 @@ import (
 )
 
 func TestClientServer(t *testing.T) {
+	//trace.SetTraceLevel(trace.LevelDebug)
+	//defer trace.SetTraceLevel(trace.LevelError)
+
 	serverAddress := ":9999"
 	messageHandler := newTestMessageHandler()
 	var closeServer func()
@@ -35,6 +38,37 @@ func TestClientServer(t *testing.T) {
 	}
 
 	close(entriesToWrite)
+
+	incomingMsgCnt := 0
+	for incomingMsgCnt < testLogEntriesCount {
+		select {
+		case <-messageHandler.entriesWritten:
+			incomingMsgCnt++
+
+		case <-time.After(time.Second * 10):
+			t.Errorf("Incomming entries have not arrived. Expected %d, got %d.", testLogEntriesCount, incomingMsgCnt)
+			t.FailNow()
+		}
+	}
+
+	truncateCmd := TruncateJSON{"src", 10000}
+	client.Truncate(&truncateCmd)
+
+	select {
+	case cmd := <-messageHandler.truncations:
+		if cmd.Lim != truncateCmd.Lim {
+			t.Error("Lim doesn't match.")
+			t.FailNow()
+		}
+
+		if cmd.Src != truncateCmd.Src {
+			t.Error("Src doesn't match.")
+			t.FailNow()
+		}
+	case <-time.After(time.Second * 10):
+		t.Error("Truncation has not arrived.")
+		t.FailNow()
+	}
 
 	queries := make(chan *LogQueryJSON)
 	result := make(chan *OutgoingLogEntryJSON)
@@ -84,19 +118,6 @@ func TestClientServer(t *testing.T) {
 			testLogEntriesCount,
 		)
 		t.FailNow()
-	}
-
-	for triesCount := 0; len(messageHandler.entriesWritten) < testLogEntriesCount; triesCount++ {
-		if triesCount == testMaxTries {
-			t.Errorf(
-				"Failed to write log entries through the JSON client. %d written, expected %d.",
-				len(messageHandler.entriesWritten),
-				testLogEntriesCount,
-			)
-			t.FailNow()
-		}
-
-		<-time.After(time.Millisecond * 10)
 	}
 
 	client.Close()

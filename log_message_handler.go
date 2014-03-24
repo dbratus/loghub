@@ -66,6 +66,10 @@ func (mh *logMessageHandler) InternalRead(queries chan *LogQueryJSON, resultJSON
 	close(resultJSON)
 }
 
+func (mh *logMessageHandler) Truncate(cmd *TruncateJSON) {
+	mh.logManager.Truncate(cmd.Lim, cmd.Src)
+}
+
 func (mh *logMessageHandler) Close() {
 	mh.logManager.Close()
 }

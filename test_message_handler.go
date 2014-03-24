@@ -16,9 +16,10 @@ const (
 )
 
 type testMessageHandler struct {
-	entriesWritten        []*IncomingLogEntryJSON
+	entriesWritten        chan *IncomingLogEntryJSON
 	outgoingEntriesToRead []*OutgoingLogEntryJSON
 	internalEntriesToRead []*InternalLogEntryJSON
+	truncations           chan *TruncateJSON
 	isClosed              bool
 }
 
@@ -40,16 +41,17 @@ func newTestMessageHandler() *testMessageHandler {
 	}
 
 	return &testMessageHandler{
-		make([]*IncomingLogEntryJSON, 0, testLogEntriesCount),
+		make(chan *IncomingLogEntryJSON),
 		outgoingEntriesToRead,
 		internalEntriesToRead,
+		make(chan *TruncateJSON),
 		false,
 	}
 }
 
 func (mh *testMessageHandler) Write(entries chan *IncomingLogEntryJSON) {
 	for ent := range entries {
-		mh.entriesWritten = append(mh.entriesWritten, ent)
+		mh.entriesWritten <- ent
 	}
 }
 
@@ -75,6 +77,12 @@ func (mh *testMessageHandler) InternalRead(queries chan *LogQueryJSON, result ch
 	close(result)
 }
 
+func (mh *testMessageHandler) Truncate(cmd *TruncateJSON) {
+	mh.truncations <- cmd
+}
+
 func (mh *testMessageHandler) Close() {
+	close(mh.entriesWritten)
+	close(mh.truncations)
 	mh.isClosed = true
 }

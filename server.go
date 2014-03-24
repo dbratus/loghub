@@ -116,6 +116,15 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 			if continueWriting {
 				writer.WriteDelimiter()
 			}
+		case ActionTruncate:
+			var cmd TruncateJSON
+
+			if err := reader.ReadJSON(&cmd); err != nil {
+				conn.Close()
+				return
+			}
+
+			handler.Truncate(&cmd)
 		}
 	}
 }

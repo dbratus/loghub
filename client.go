@@ -317,6 +317,35 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 	}()
 }
 
+func (cli *logHubClient) Truncate(cmd *TruncateJSON) {
+	var conn net.Conn
+	atomic.AddInt32(cli.activeOps, 1)
+	defer atomic.AddInt32(cli.activeOps, -1)
+
+	if c, ok := cli.getConn(); !ok {
+		return
+	} else {
+		conn = c
+	}
+
+	writer := NewJSONStreamWriter(conn)
+
+	header := MessageHeaderJSON{ActionTruncate}
+	if err := writer.WriteJSON(&header); err != nil {
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
+		cli.brokenConnChan <- conn
+		return
+	}
+
+	if err := writer.WriteJSON(cmd); err != nil {
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
+		cli.brokenConnChan <- conn
+		return
+	}
+
+	cli.putConnChan <- conn
+}
+
 func (cli *logHubClient) Close() {
 	atomic.AddInt32(cli.isClosed, 1)
 
