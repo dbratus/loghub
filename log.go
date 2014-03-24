@@ -52,7 +52,7 @@ type Logger interface {
 type LogManager interface {
 	Logger
 
-	Truncate(limit int64, source string)
+	Truncate(source string, limit int64)
 
 	Close()
 	Size() int64

@@ -29,8 +29,8 @@ type readLogCmd struct {
 }
 
 type truncateLogCmd struct {
-	limit  int64
 	source string
+	limit  int64
 }
 
 type defaultLogManager struct {
@@ -65,8 +65,8 @@ func (mg *defaultLogManager) ReadLog(q *LogQuery, entries chan *LogEntry) {
 	mg.readChan <- readLogCmd{q, entries}
 }
 
-func (mg *defaultLogManager) Truncate(limit int64, source string) {
-	mg.truncateChan <- truncateLogCmd{limit, source}
+func (mg *defaultLogManager) Truncate(source string, limit int64) {
+	mg.truncateChan <- truncateLogCmd{source, limit}
 }
 
 func (mg *defaultLogManager) Size() int64 {

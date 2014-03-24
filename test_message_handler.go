@@ -6,6 +6,7 @@
 package main
 
 import (
+	"sync/atomic"
 	"time"
 )
 
@@ -20,7 +21,7 @@ type testMessageHandler struct {
 	outgoingEntriesToRead []*OutgoingLogEntryJSON
 	internalEntriesToRead []*InternalLogEntryJSON
 	truncations           chan *TruncateJSON
-	isClosed              bool
+	isClosed              *int32
 }
 
 func newTestMessageHandler() *testMessageHandler {
@@ -45,13 +46,15 @@ func newTestMessageHandler() *testMessageHandler {
 		outgoingEntriesToRead,
 		internalEntriesToRead,
 		make(chan *TruncateJSON),
-		false,
+		new(int32),
 	}
 }
 
 func (mh *testMessageHandler) Write(entries chan *IncomingLogEntryJSON) {
-	for ent := range entries {
-		mh.entriesWritten <- ent
+	if !mh.IsClosed() {
+		for ent := range entries {
+			mh.entriesWritten <- ent
+		}
 	}
 }
 
@@ -78,11 +81,17 @@ func (mh *testMessageHandler) InternalRead(queries chan *LogQueryJSON, result ch
 }
 
 func (mh *testMessageHandler) Truncate(cmd *TruncateJSON) {
-	mh.truncations <- cmd
+	if !mh.IsClosed() {
+		mh.truncations <- cmd
+	}
 }
 
 func (mh *testMessageHandler) Close() {
+	atomic.StoreInt32(mh.isClosed, 1)
 	close(mh.entriesWritten)
 	close(mh.truncations)
-	mh.isClosed = true
+}
+
+func (mh *testMessageHandler) IsClosed() bool {
+	return atomic.LoadInt32(mh.isClosed) > 0
 }

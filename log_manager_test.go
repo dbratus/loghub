@@ -179,7 +179,7 @@ func TestTruncate(t *testing.T) {
 		t.FailNow()
 	}
 
-	logManager.Truncate(baseTs.Add(time.Hour*time.Duration(entriesPerSource/2)).UnixNano(), "src.")
+	logManager.Truncate("src.", baseTs.Add(time.Hour*time.Duration(entriesPerSource/2)).UnixNano())
 
 	qResult = make(chan *LogEntry)
 	logManager.ReadLog(&LogQuery{

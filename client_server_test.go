@@ -123,7 +123,7 @@ func TestClientServer(t *testing.T) {
 	client.Close()
 	closeServer()
 
-	if !messageHandler.isClosed {
+	if !messageHandler.IsClosed() {
 		t.Error("Failed to close JSON message handler.")
 		t.FailNow()
 	}

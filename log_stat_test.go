@@ -24,7 +24,7 @@ func (mg *logManagerForStatTest) ReadLog(*LogQuery, chan *LogEntry) {
 func (mg *logManagerForStatTest) Close() {
 }
 
-func (mg *logManagerForStatTest) Truncate(int64, string) {
+func (mg *logManagerForStatTest) Truncate(string, int64) {
 }
 
 func (mg *logManagerForStatTest) Size() int64 {
@@ -40,6 +40,9 @@ func (h *hubForStatTest) ReadLog([]*LogQuery, chan *LogEntry) {
 
 func (h *hubForStatTest) SetLogStat(addr net.IP, stat *LogStat) {
 	h.stat <- stat
+}
+
+func (h *hubForStatTest) Truncate(source string, limit int64) {
 }
 
 func (h *hubForStatTest) Close() {

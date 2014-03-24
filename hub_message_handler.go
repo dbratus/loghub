@@ -60,7 +60,7 @@ func (mh *hubMessageHandler) InternalRead(queries chan *LogQueryJSON, resultJSON
 }
 
 func (mh *hubMessageHandler) Truncate(cmd *TruncateJSON) {
-	//TODO: Truncate hub.
+	mh.hub.Truncate(cmd.Src, cmd.Lim)
 }
 
 func (mh *hubMessageHandler) Close() {
