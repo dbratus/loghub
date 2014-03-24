@@ -20,11 +20,12 @@ import (
 const dateTimeFormat = "2006-01-02 15:04:05"
 
 var commands = map[string]func([]string){
-	"log":  logCommand,
-	"hub":  hubCommand,
-	"get":  getCommand,
-	"put":  putCommand,
-	"help": helpCommand,
+	"log":      logCommand,
+	"hub":      hubCommand,
+	"get":      getCommand,
+	"put":      putCommand,
+	"truncate": truncateCommand,
+	"help":     helpCommand,
 }
 
 func main() {
@@ -41,10 +42,11 @@ func main() {
 func printCommands() {
 	fmt.Println("Usage: loghub <command> <flags>")
 	fmt.Println("Commands:")
-	fmt.Println("  log  Starts log.")
-	fmt.Println("  hub  Starts hub.")
-	fmt.Println("  get  Gets log entries from log or hub.")
-	fmt.Println("  put  Puts log entries to log or hub.")
+	fmt.Println("  log       Starts log.")
+	fmt.Println("  hub       Starts hub.")
+	fmt.Println("  get       Gets log entries from log or hub.")
+	fmt.Println("  put       Puts log entries to log or hub.")
+	fmt.Println("  truncate  Truncates the log.")
 	fmt.Println()
 	fmt.Println("See 'loghub help <command>' for more information on a specific command.")
 }
@@ -154,7 +156,7 @@ func getCommand(args []string) {
 	rng := flags.Duration("range", 0, "Time range of timestamps relative to the base.")
 	minSev := flags.Int("minsev", 0, "Min severity.")
 	maxSev := flags.Int("maxsev", 0, "Max severity.")
-	src := flags.String("src", "", "Log sources.")
+	src := flags.String("src", "", "Comma separated list of log sources.")
 	format := flags.String("fmt", "%s %s %d %s", "Log entry format.")
 	tsfmt := flags.String("tsfmt", "2006-01-02 15:04:05", "Timestamp format.")
 
@@ -200,7 +202,7 @@ func getCommand(args []string) {
 		queries <- &LogQueryJSON{from, to, *minSev, *maxSev, *src}
 	} else {
 		for _, s := range strings.Split(*src, ",") {
-			queries <- &LogQueryJSON{from, to, *minSev, *maxSev, s}
+			queries <- &LogQueryJSON{from, to, *minSev, *maxSev, strings.Trim(s, " ")}
 		}
 	}
 
@@ -265,6 +267,39 @@ func putCommand(args []string) {
 			}
 		} else {
 			break
+		}
+	}
+}
+
+func truncateCommand(args []string) {
+	flags := flag.NewFlagSet("truncate", flag.ExitOnError)
+	addr := flags.String("addr", "", "Address and port of a log or a hub.")
+	src := flags.String("src", "", "Comma separated list of log sources.")
+	lim := flags.Duration("lim", 0, "The limit of the truncation.")
+
+	if *addr == "" {
+		println("Log or hub address is not specified.")
+		os.Exit(1)
+	}
+
+	if *lim == time.Duration(0) {
+		println("The limit is not specified.")
+		os.Exit(1)
+	}
+
+	client := NewLogHubClient(*addr, 1)
+	defer client.Close()
+
+	if *src == "" {
+		client.Truncate(&TruncateJSON{*src, time.Now().Add(*lim).UnixNano()})
+	} else {
+		for _, s := range strings.Split(*src, ",") {
+			client.Truncate(
+				&TruncateJSON{
+					strings.Trim(s, " "),
+					time.Now().Add(*lim).UnixNano(),
+				},
+			)
 		}
 	}
 }
