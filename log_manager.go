@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/dbratus/loghub/history"
 	"github.com/dbratus/loghub/rnglock"
 	"github.com/dbratus/loghub/trace"
 	"os"
@@ -40,6 +41,11 @@ type defaultLogManager struct {
 	sizeChan     chan chan int64
 	truncateChan chan truncateLogCmd
 	closeChan    chan chan bool
+}
+
+type logSourceInfo struct {
+	lock    *rnglock.RangeLock
+	history *history.History
 }
 
 func NewDefaultLogManager(home string) LogManager {
@@ -136,51 +142,6 @@ func parseLogFileName(fileName string) (source string, ts string) {
 	return
 }
 
-func initLogManager(home string) (logSources map[string]*rnglock.RangeLock, size int64, initialized bool) {
-	initialized = true
-	logSources = make(map[string]*rnglock.RangeLock)
-	size = 0
-
-	if homeDir, err := os.Open(home); err == nil {
-		defer homeDir.Close()
-
-		if dirnames, err := homeDir.Readdirnames(0); err == nil {
-			for _, dir := range dirnames {
-				if src, err := getSourceNameByDir(dir); err == nil {
-					logSources[src] = rnglock.New()
-				}
-
-				if srcDir, err := os.Open(home + "/" + dir); err == nil {
-					defer srcDir.Close()
-
-					if logFiles, err := srcDir.Readdir(0); err == nil {
-						for _, logFile := range logFiles {
-							size += logFile.Size()
-						}
-					} else {
-						logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
-						initialized = false
-						return
-					}
-
-				} else {
-					logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
-					initialized = false
-					return
-				}
-			}
-		} else {
-			logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
-			initialized = false
-		}
-	} else {
-		logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
-		initialized = false
-	}
-
-	return
-}
-
 func getLogFileNamesForRange(sources []string, minTimestamp int64, maxTimestamp int64, fileNames chan string) {
 	minHour := time.Unix(0, minTimestamp).Truncate(time.Hour).UnixNano()
 	maxHour := time.Unix(0, maxTimestamp).Truncate(time.Hour).UnixNano()
@@ -200,9 +161,59 @@ func getMaxOpenFiles() uint64 {
 	return (lim.Cur / 4) * 3
 }
 
+func initLogManager(home string) (logSources map[string]*logSourceInfo, size int64, initialized bool) {
+	initialized = true
+	logSources = make(map[string]*logSourceInfo)
+	size = 0
+
+	if homeDir, err := os.Open(home); err == nil {
+		defer homeDir.Close()
+
+		if dirnames, err := homeDir.Readdirnames(0); err == nil {
+			for _, dir := range dirnames {
+				if src, err := getSourceNameByDir(dir); err == nil {
+					srcInfo := &logSourceInfo{rnglock.New(), history.New(time.Hour)}
+
+					logSources[src] = srcInfo
+
+					if srcDir, err := os.Open(home + "/" + dir); err == nil {
+						defer srcDir.Close()
+
+						if logFiles, err := srcDir.Readdir(0); err == nil {
+							for _, logFile := range logFiles {
+								size += logFile.Size()
+								start, _ := getRangeByFileName(logFile.Name())
+
+								srcInfo.history.Append(time.Unix(0, start))
+							}
+						} else {
+							logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
+							initialized = false
+							return
+						}
+
+					} else {
+						logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
+						initialized = false
+						return
+					}
+				}
+			}
+		} else {
+			logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
+			initialized = false
+		}
+	} else {
+		logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
+		initialized = false
+	}
+
+	return
+}
+
 func (mg *defaultLogManager) run() {
 	logSources, closedSize, initialized := initLogManager(mg.home)
-	openLogFiles := make(map[string]LogManager)
+	openLogFiles := make(map[string]LogStorage)
 	logFileTimeouts := make(map[string]*int64)
 	closeLogFileChan := make(chan string)
 
@@ -259,7 +270,7 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
-	getLogFile := func(fileName string, create bool) (LogManager, error) {
+	getLogFile := func(fileName string, create bool) (LogStorage, error) {
 		if logFile, found := openLogFiles[fileName]; !found {
 			srcDir := mg.home + "/" + fileName[0:strings.LastIndex(fileName, "/")]
 
@@ -295,16 +306,16 @@ func (mg *defaultLogManager) run() {
 				src, fileName := parseLogFileName(logFileToClose)
 
 				//Locking the file's range and closing the file.
-				if slock, found := logSources[src]; found {
+				if srcInfo, found := logSources[src]; found {
 					start, end := getRangeByFileName(fileName)
 
 					//logManagerTrace.Debugf("Locking range %s %d-%d for write.", src, start, end)
-					lck := slock.Lock(opCnt, start, end, false)
+					lck := srcInfo.lock.Lock(opCnt, start, end, false)
 
 					onClose(logFileToClose)
 
 					//logManagerTrace.Debugf("Unlocking range %s %d-%d.", src, start, end)
-					slock.Unlock(lck)
+					srcInfo.lock.Unlock(lck)
 				}
 			}
 
@@ -339,17 +350,17 @@ func (mg *defaultLogManager) run() {
 		locksHold := make(map[string]rnglock.LockId)
 
 		for _, src := range sources {
-			if slock, found := logSources[src]; found {
+			if srcInfo, found := logSources[src]; found {
 				//logManagerTrace.Debugf("Locking range %s %d-%d for read.", src, cmd.query.From, cmd.query.To)
-				locksHold[src] = slock.Lock(opCnt, cmd.query.From, cmd.query.To, true)
+				locksHold[src] = srcInfo.lock.Lock(opCnt, cmd.query.From, cmd.query.To, true)
 			}
 		}
 
 		unlockAll := func() {
 			for src, lck := range locksHold {
-				if slock, found := logSources[src]; found {
+				if srcInfo, found := logSources[src]; found {
 					//logManagerTrace.Debugf("Unlocking range %s %d-%d.", src, cmd.query.From, cmd.query.To)
-					slock.Unlock(lck)
+					srcInfo.lock.Unlock(lck)
 				}
 			}
 		}
@@ -396,10 +407,16 @@ func (mg *defaultLogManager) run() {
 			}
 
 			logFileToWrite := getLogFileNameForEntry(ent)
+			var srcInfo *logSourceInfo
 
-			if _, found := logSources[ent.Source]; !found {
-				logSources[ent.Source] = rnglock.New()
+			if inf, found := logSources[ent.Source]; !found {
+				srcInfo = &logSourceInfo{rnglock.New(), history.New(time.Hour)}
+				logSources[ent.Source] = srcInfo
+			} else {
+				srcInfo = inf
 			}
+
+			srcInfo.history.Append(time.Unix(0, ent.Timestamp))
 
 			if logFile, err := getLogFile(logFileToWrite, true); err == nil {
 				logFile.WriteLog(ent)
@@ -434,26 +451,36 @@ func (mg *defaultLogManager) run() {
 		close(sz)
 	}
 
-	truncateLogSource := func(slock *rnglock.RangeLock, lck rnglock.LockId, src string, limit int64) {
-		defer slock.Unlock(lck)
+	deleteLogSource := func(src string) {
+		if srcInfo, found := logSources[src]; found {
+			srcInfo.lock.Close()
+			delete(logSources, src)
+		}
+	}
+
+	truncateLogSource := func(srcInfo *logSourceInfo, lck rnglock.LockId, src string, limit int64) {
+		defer srcInfo.lock.Unlock(lck)
 
 		srcDirName := mg.home + "/" + getSourceDirName(src)
-		limitFName := getFileNameForTimestamp(limit)
+		minTs := srcInfo.history.Start().UnixNano()
 
-		if dir, err := os.Open(srcDirName); err == nil {
-			if fnames, err := dir.Readdirnames(0); err == nil {
+		for minTs <= limit {
+			if err := os.Remove(srcDirName + "/" + getFileNameForTimestamp(minTs)); err != nil {
+				logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
+			}
 
-				for _, name := range fnames {
-					if name <= limitFName {
-						os.Remove(srcDirName + "/" + name)
-					}
+			srcInfo.history.Truncate(time.Unix(0, minTs))
+
+			if srcInfo.history.IsEmpty() {
+				if err := os.RemoveAll(srcDirName); err != nil {
+					logManagerTrace.Errorf("Failed to remove source directory: %s.", err.Error())
 				}
 
+				deleteLogSource(src)
+				break
 			} else {
-				logManagerTrace.Errorf("Failed to read names in the source dir. %s: %s.", srcDirName, err.Error())
+				minTs = srcInfo.history.Start().UnixNano()
 			}
-		} else {
-			logManagerTrace.Errorf("Failed to open source directory %s: %s.", srcDirName, err.Error())
 		}
 	}
 
@@ -464,8 +491,8 @@ func (mg *defaultLogManager) run() {
 			limitFName := getFileNameForTimestamp(cmd.limit)
 
 			for _, src := range sources {
-				if slock, found := logSources[src]; found {
-					lck := slock.Lock(opCnt, minTimestamp, cmd.limit, false)
+				if srcInfo, found := logSources[src]; found {
+					lck := srcInfo.lock.Lock(opCnt, minTimestamp, cmd.limit, false)
 
 					for fileName, _ := range openLogFiles {
 						fileSrc, fileTs := parseLogFileName(fileName)
@@ -475,7 +502,7 @@ func (mg *defaultLogManager) run() {
 						}
 					}
 
-					go truncateLogSource(slock, lck, src, cmd.limit)
+					go truncateLogSource(srcInfo, lck, src, cmd.limit)
 				}
 			}
 		}

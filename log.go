@@ -49,13 +49,17 @@ type Logger interface {
 	LogWriter
 }
 
-type LogManager interface {
+type LogStorage interface {
 	Logger
-
-	Truncate(source string, limit int64)
 
 	Close()
 	Size() int64
+}
+
+type LogManager interface {
+	LogStorage
+
+	Truncate(source string, limit int64)
 }
 
 func EncodeMessage(msg string) ([]byte, int) {

@@ -509,13 +509,6 @@ func (log *LogFile) ReadLog(q *LogQuery, entries chan *LogEntry) {
 	log.readChan <- readLogCmd{q, entries}
 }
 
-func (log *LogFile) Truncate(source string, limit int64) {
-	//For now, logs are truncated with hour precesison,
-	//so truncation of individual files is not required.
-	//
-	//This method is required only to support LogManager interface.
-}
-
 func (log *LogFile) Size() int64 {
 	result := make(chan int64)
 	log.sizeChan <- result
