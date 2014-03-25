@@ -234,9 +234,9 @@ func TestTransfer(t *testing.T) {
 	}
 
 	entries := make(chan *LogEntry)
-	gb := 1024 * 1024 * 1024
+	gb := int64(1024 * 1024 * 1024)
 
-	if _, found := logManager.GetTransferChunk(gb, entries); found {
+	if chunkId, found := logManager.GetTransferChunk(gb, entries); found {
 		cnt := 0
 
 		for _ = range entries {
@@ -247,6 +247,16 @@ func TestTransfer(t *testing.T) {
 			t.Errorf("Transfer chunk has not enough entries. Expected %d, got %d.", entriesPerSource, cnt)
 			t.FailNow()
 		}
+
+		initialLogSize := logManager.Size()
+
+		logManager.DeleteTransferChunk(chunkId)
+
+		if logManager.Size() >= initialLogSize {
+			t.Error("Log must shrink after transfer chunk deletion.")
+			t.FailNow()
+		}
+
 	} else {
 		t.Error("Transfer chunk not found.")
 		t.FailNow()

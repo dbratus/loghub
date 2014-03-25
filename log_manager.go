@@ -40,6 +40,10 @@ type getTransferChunkCmd struct {
 	id      chan string
 }
 
+type delTransferChunkCmd struct {
+	id string
+}
+
 type defaultLogManager struct {
 	home                 string
 	writeChan            chan *LogEntry
@@ -47,6 +51,7 @@ type defaultLogManager struct {
 	sizeChan             chan chan int64
 	truncateChan         chan truncateLogCmd
 	getTransferChunkChan chan getTransferChunkCmd
+	delTransferChunkChan chan delTransferChunkCmd
 	closeChan            chan chan bool
 }
 
@@ -63,6 +68,7 @@ func NewDefaultLogManager(home string) LogManager {
 		make(chan chan int64),
 		make(chan truncateLogCmd),
 		make(chan getTransferChunkCmd),
+		make(chan delTransferChunkCmd),
 		make(chan chan bool),
 	}
 
@@ -96,7 +102,7 @@ func (mg *defaultLogManager) AcceptTransferChunk(id string, entries chan *LogEnt
 }
 
 func (mg *defaultLogManager) DeleteTransferChunk(id string) {
-	//TODO: Implement.
+	mg.delTransferChunkChan <- delTransferChunkCmd{id}
 }
 
 func (mg *defaultLogManager) Size() int64 {
@@ -111,6 +117,7 @@ func (mg *defaultLogManager) Close() {
 	close(mg.sizeChan)
 	close(mg.truncateChan)
 	close(mg.getTransferChunkChan)
+	close(mg.delTransferChunkChan)
 
 	ack := make(chan bool)
 	mg.closeChan <- ack
@@ -143,7 +150,7 @@ func getRangeByFileName(fileName string) (start int64, end int64) {
 
 	} else {
 		start = st.UnixNano()
-		end = st.Add(time.Hour - time.Millisecond).UnixNano()
+		end = st.Add(time.Hour - time.Nanosecond).UnixNano()
 	}
 
 	return
@@ -569,6 +576,27 @@ func (mg *defaultLogManager) run() {
 		close(cmd.id)
 	}
 
+	onDeleteTransferChunk := func(cmd delTransferChunkCmd) {
+		src, ts := parseLogFileName(cmd.id)
+
+		if srcInfo, found := logSources[src]; found {
+			fileName := mg.home + "/" + cmd.id
+
+			if stat, err := os.Stat(fileName); err == nil {
+				rangeStart, rangeEnd := getRangeByFileName(ts)
+
+				lck := srcInfo.lock.Lock(opCnt, rangeStart, rangeEnd, false)
+				defer srcInfo.lock.Unlock(lck)
+
+				onClose(cmd.id)
+
+				if err := os.Remove(fileName); err == nil {
+					closedSize -= stat.Size()
+				}
+			}
+		}
+	}
+
 	for {
 		opCnt++
 
@@ -603,6 +631,11 @@ func (mg *defaultLogManager) run() {
 				onGetTransferChunk(cmd)
 			}
 
+		case cmd, ok := <-mg.delTransferChunkChan:
+			if ok {
+				onDeleteTransferChunk(cmd)
+			}
+
 		case ack := <-mg.closeChan:
 			logManagerTrace.Debug("Closing")
 
@@ -621,6 +654,10 @@ func (mg *defaultLogManager) run() {
 			for cmd := range mg.getTransferChunkChan {
 				close(cmd.entries)
 				close(cmd.id)
+			}
+
+			for cmd := range mg.delTransferChunkChan {
+				onDeleteTransferChunk(cmd)
 			}
 
 			for _, logFile := range openLogFiles {
