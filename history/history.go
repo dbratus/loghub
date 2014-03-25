@@ -25,13 +25,8 @@ func New(unitOfMeasure time.Duration) *History {
 	return &History{unitOfMeasure, nil, nil}
 }
 
-func roundTimeDown(t time.Time, uom time.Duration) time.Time {
-	mult := t.UnixNano() / int64(uom)
-	return time.Unix(0, mult*int64(uom))
-}
-
 func (h *History) Append(point time.Time) {
-	rounded := roundTimeDown(point, h.unitOfMeasure)
+	rounded := point.Truncate(h.unitOfMeasure)
 
 	if h.head == nil {
 		h.head = &segment{rounded, rounded, nil}
@@ -70,7 +65,7 @@ func (h *History) IsEmpty() bool {
 }
 
 func (h *History) Truncate(limit time.Time) {
-	rounded := roundTimeDown(limit, h.unitOfMeasure).Add(h.unitOfMeasure)
+	rounded := limit.Truncate(h.unitOfMeasure).Add(h.unitOfMeasure)
 	cur := h.tail
 
 	for cur != nil {

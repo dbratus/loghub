@@ -202,3 +202,53 @@ func TestTruncate(t *testing.T) {
 
 	logManager.Close()
 }
+
+func TestTransfer(t *testing.T) {
+	makeTestLogHome()
+	defer deleteTestLogHome()
+
+	sources := [...]string{"src1", "src2", "src3"}
+
+	entriesPerSource := 10
+	logManager := NewDefaultLogManager(getTestLogHome())
+
+	nHours := 3
+	thisHour := time.Now().Truncate(time.Hour)
+
+	for i := 0; i < nHours; i++ {
+		baseTs := thisHour.Add(time.Hour * time.Duration(i-nHours))
+
+		for _, src := range sources {
+			for j := 0; j < entriesPerSource; j++ {
+				ent := &LogEntry{
+					baseTs.Add(time.Minute * time.Duration(j)).UnixNano(),
+					1,
+					src,
+					EncodingPlain,
+					[]byte("Message"),
+				}
+
+				logManager.WriteLog(ent)
+			}
+		}
+	}
+
+	entries := make(chan *LogEntry)
+	gb := 1024 * 1024 * 1024
+
+	if _, found := logManager.GetTransferChunk(gb, entries); found {
+		cnt := 0
+
+		for _ = range entries {
+			cnt++
+		}
+
+		if cnt < entriesPerSource {
+			t.Errorf("Transfer chunk has not enough entries. Expected %d, got %d.", entriesPerSource, cnt)
+			t.FailNow()
+		}
+	} else {
+		t.Error("Transfer chunk not found.")
+		t.FailNow()
+	}
+}

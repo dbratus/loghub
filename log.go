@@ -20,6 +20,9 @@ const PlainMessageMaxLength = 512
 const maxTimestamp = int64(^uint64(0) ^ 1<<63)
 const minTimestamp = -int64(^uint64(0)^1<<63) - 1
 
+const minSeverity = 0
+const maxSeverity = 255
+
 type LogEntry struct {
 	Timestamp int64
 	Severity  int
@@ -60,6 +63,10 @@ type LogManager interface {
 	LogStorage
 
 	Truncate(source string, limit int64)
+
+	GetTransferChunk(maxSize int64, entries chan *LogEntry) (id string, found bool)
+	AcceptTransferChunk(id string, entries chan *LogEntry) chan bool
+	DeleteTransferChunk(id string)
 }
 
 func EncodeMessage(msg string) ([]byte, int) {

@@ -31,6 +31,17 @@ func (mg *logManagerForStatTest) Size() int64 {
 	return mg.size
 }
 
+func (mg *logManagerForStatTest) GetTransferChunk(maxSize int64, entries chan *LogEntry) (id string, found bool) {
+	return "", false
+}
+
+func (mg *logManagerForStatTest) AcceptTransferChunk(id string, entries chan *LogEntry) chan bool {
+	return nil
+}
+
+func (mg *logManagerForStatTest) DeleteTransferChunk(id string) {
+}
+
 type hubForStatTest struct {
 	stat chan *LogStat
 }

@@ -34,13 +34,20 @@ type truncateLogCmd struct {
 	limit  int64
 }
 
+type getTransferChunkCmd struct {
+	maxSize int64
+	entries chan *LogEntry
+	id      chan string
+}
+
 type defaultLogManager struct {
-	home         string
-	writeChan    chan *LogEntry
-	readChan     chan readLogCmd
-	sizeChan     chan chan int64
-	truncateChan chan truncateLogCmd
-	closeChan    chan chan bool
+	home                 string
+	writeChan            chan *LogEntry
+	readChan             chan readLogCmd
+	sizeChan             chan chan int64
+	truncateChan         chan truncateLogCmd
+	getTransferChunkChan chan getTransferChunkCmd
+	closeChan            chan chan bool
 }
 
 type logSourceInfo struct {
@@ -55,6 +62,7 @@ func NewDefaultLogManager(home string) LogManager {
 		make(chan readLogCmd),
 		make(chan chan int64),
 		make(chan truncateLogCmd),
+		make(chan getTransferChunkCmd),
 		make(chan chan bool),
 	}
 
@@ -75,6 +83,22 @@ func (mg *defaultLogManager) Truncate(source string, limit int64) {
 	mg.truncateChan <- truncateLogCmd{source, limit}
 }
 
+func (mg *defaultLogManager) GetTransferChunk(maxSize int64, entries chan *LogEntry) (id string, found bool) {
+	idChan := make(chan string)
+	mg.getTransferChunkChan <- getTransferChunkCmd{maxSize, entries, idChan}
+	id, found = <-idChan
+	return
+}
+
+func (mg *defaultLogManager) AcceptTransferChunk(id string, entries chan *LogEntry) chan bool {
+	//TODO: Implement.
+	return nil
+}
+
+func (mg *defaultLogManager) DeleteTransferChunk(id string) {
+	//TODO: Implement.
+}
+
 func (mg *defaultLogManager) Size() int64 {
 	result := make(chan int64)
 	mg.sizeChan <- result
@@ -86,6 +110,7 @@ func (mg *defaultLogManager) Close() {
 	close(mg.readChan)
 	close(mg.sizeChan)
 	close(mg.truncateChan)
+	close(mg.getTransferChunkChan)
 
 	ack := make(chan bool)
 	mg.closeChan <- ack
@@ -508,6 +533,42 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
+	onGetTransferChunk := func(cmd getTransferChunkCmd) {
+		for src, srcInfo := range logSources {
+			if srcInfo.history.Start().Before(time.Now().Truncate(time.Hour)) {
+				chunkId := getSourceDirName(src) + "/" + getFileNameForTimestamp(srcInfo.history.Start().UnixNano())
+				fileName := mg.home + "/" + chunkId
+
+				if stat, err := os.Stat(fileName); err == nil && stat.Size() < cmd.maxSize {
+					rangeStart := srcInfo.history.Start().UnixNano()
+					rangeEnd := srcInfo.history.Start().Add(time.Hour).UnixNano()
+
+					lck := srcInfo.lock.Lock(opCnt, rangeStart, rangeEnd, true)
+
+					if logFile, err := getLogFile(chunkId, false); err == nil {
+						cmd.id <- chunkId
+						close(cmd.id)
+
+						results := make(chan *LogEntry)
+						logFile.ReadLog(&LogQuery{rangeStart, rangeEnd, minSeverity, maxSeverity, ""}, results)
+
+						go func() {
+							ForwardLog(results, cmd.entries)
+							srcInfo.lock.Unlock(lck)
+						}()
+
+						return
+					} else {
+						srcInfo.lock.Unlock(lck)
+					}
+				}
+			}
+		}
+
+		close(cmd.entries)
+		close(cmd.id)
+	}
+
 	for {
 		opCnt++
 
@@ -537,6 +598,11 @@ func (mg *defaultLogManager) run() {
 				onTruncate(cmd)
 			}
 
+		case cmd, ok := <-mg.getTransferChunkChan:
+			if ok {
+				onGetTransferChunk(cmd)
+			}
+
 		case ack := <-mg.closeChan:
 			logManagerTrace.Debug("Closing")
 
@@ -550,6 +616,11 @@ func (mg *defaultLogManager) run() {
 
 			for sz := range mg.sizeChan {
 				onSize(sz)
+			}
+
+			for cmd := range mg.getTransferChunkChan {
+				close(cmd.entries)
+				close(cmd.id)
 			}
 
 			for _, logFile := range openLogFiles {
