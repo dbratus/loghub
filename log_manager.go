@@ -338,7 +338,6 @@ func (mg *defaultLogManager) run() {
 
 	onClose := func(logFileToClose string) {
 		if logFile, found := openLogFiles[logFileToClose]; found {
-			//Tracking the closed files' size.
 			atomic.AddInt64(closedSize, logFile.Size())
 
 			logFile.Close()
@@ -545,11 +544,21 @@ func (mg *defaultLogManager) run() {
 		minTs := timeToTimestamp(srcInfo.history.Start())
 
 		for minTs <= limit {
-			if err := os.Remove(srcDirName + "/" + getFileNameForTimestamp(minTs)); err != nil {
-				logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
+			fileName := srcDirName + "/" + getFileNameForTimestamp(minTs)
+			size := int64(0)
+
+			if stat, err := os.Stat(fileName); err == nil {
+				size = stat.Size()
+			} else {
+				logManagerTrace.Errorf("Failed to get stat of log file: %s.", err.Error())
 			}
 
-			//TODO: Track size!
+			if err := os.Remove(fileName); err != nil {
+				logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
+			} else {
+				atomic.AddInt64(closedSize, -size)
+			}
+
 			srcInfo.history.Truncate(timestampToTime(minTs))
 
 			if srcInfo.history.IsEmpty() {

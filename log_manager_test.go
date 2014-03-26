@@ -142,6 +142,7 @@ func TestTruncate(t *testing.T) {
 
 	entriesPerSource := 128
 	logManager := NewDefaultLogManager(getTestLogHome())
+	defer logManager.Close()
 
 	baseTs := time.Now()
 
@@ -178,6 +179,8 @@ func TestTruncate(t *testing.T) {
 		t.FailNow()
 	}
 
+	initialSize := logManager.Size()
+
 	logManager.Truncate("src.", timeToTimestamp(baseTs.Add(time.Hour*time.Duration(entriesPerSource/2))))
 
 	qResult = make(chan *LogEntry)
@@ -199,9 +202,10 @@ func TestTruncate(t *testing.T) {
 		t.FailNow()
 	}
 
-	//TODO: Check size!
-
-	logManager.Close()
+	if sz := logManager.Size(); sz >= initialSize {
+		t.Errorf("Log must shrink after truncation. Was %d, became %d.", initialSize, sz)
+		t.FailNow()
+	}
 }
 
 func TestTransfer(t *testing.T) {
