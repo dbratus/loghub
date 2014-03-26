@@ -6,6 +6,8 @@
 package main
 
 func MergeLogs(leftIn chan *LogEntry, rightIn chan *LogEntry, out chan *LogEntry) {
+	//TODO: Remove duplicates.
+
 	var left, right *LogEntry = nil, nil
 
 	for {

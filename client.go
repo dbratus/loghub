@@ -143,6 +143,7 @@ func (cli *logHubClient) Write(entries chan *IncomingLogEntryJSON) {
 		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
 		atomic.AddInt32(cli.activeOps, -1)
+		go PurgeIncomingLogEntryJSON(entries)
 		return
 	}
 
@@ -194,6 +195,8 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
 		atomic.AddInt32(cli.activeOps, -1)
+		go PurgeLogQueryJSON(queries)
+		close(entries)
 		return
 	}
 
@@ -266,6 +269,8 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
 		atomic.AddInt32(cli.activeOps, -1)
+		go PurgeLogQueryJSON(queries)
+		close(entries)
 		return
 	}
 
@@ -344,6 +349,111 @@ func (cli *logHubClient) Truncate(cmd *TruncateJSON) {
 	}
 
 	cli.putConnChan <- conn
+}
+
+func (cli *logHubClient) Transfer(cmd *TransferJSON) {
+	var conn net.Conn
+	atomic.AddInt32(cli.activeOps, 1)
+	defer atomic.AddInt32(cli.activeOps, -1)
+
+	if c, ok := cli.getConn(); !ok {
+		return
+	} else {
+		conn = c
+	}
+
+	writer := NewJSONStreamWriter(conn)
+
+	header := MessageHeaderJSON{ActionTransfer}
+	if err := writer.WriteJSON(&header); err != nil {
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
+		cli.brokenConnChan <- conn
+		return
+	}
+
+	if err := writer.WriteJSON(cmd); err != nil {
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
+		cli.brokenConnChan <- conn
+		return
+	}
+
+	cli.putConnChan <- conn
+}
+
+func (cli *logHubClient) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJSON, resultChan chan *AcceptResultJSON) {
+	var conn net.Conn
+	atomic.AddInt32(cli.activeOps, 1)
+
+	respond := func(result bool) {
+		resultChan <- &AcceptResultJSON{result}
+		close(resultChan)
+	}
+
+	if c, ok := cli.getConn(); !ok {
+		atomic.AddInt32(cli.activeOps, -1)
+		go PurgeInternalLogEntryJSON(entries)
+		go respond(false)
+	} else {
+		conn = c
+	}
+
+	writer := NewJSONStreamWriter(conn)
+	reader := NewJSONStreamReader(conn)
+
+	header := MessageHeaderJSON{ActionAccept}
+	if err := writer.WriteJSON(&header); err != nil {
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
+		cli.brokenConnChan <- conn
+		atomic.AddInt32(cli.activeOps, -1)
+		go PurgeInternalLogEntryJSON(entries)
+		go respond(false)
+	}
+
+	go func() {
+		defer atomic.AddInt32(cli.activeOps, -1)
+
+		if err := writer.WriteJSON(cmd); err != nil {
+			clientTrace.Errorf("Failed to write message: %s.", err.Error())
+			respond(false)
+			cli.brokenConnChan <- conn
+			return
+		}
+
+		ok := true
+
+		for ent := range entries {
+			if ok {
+				if err := writer.WriteJSON(ent); err != nil {
+					clientTrace.Errorf("Failed to write message: %s.", err.Error())
+					ok = false
+				}
+			}
+		}
+
+		if ok {
+			if err := writer.WriteDelimiter(); err != nil {
+				clientTrace.Errorf("Failed to write message: %s.", err.Error())
+				respond(false)
+				cli.brokenConnChan <- conn
+				return
+			}
+
+			var acceptResult AcceptResultJSON
+
+			if err := reader.ReadJSON(&acceptResult); err != nil {
+				clientTrace.Errorf("Failed to read message: %s.", err.Error())
+				respond(false)
+				cli.brokenConnChan <- conn
+				return
+			}
+
+			respond(acceptResult.Result)
+			cli.putConnChan <- conn
+		} else {
+			respond(false)
+			cli.brokenConnChan <- conn
+		}
+	}()
 }
 
 func (cli *logHubClient) Close() {

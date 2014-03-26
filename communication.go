@@ -52,6 +52,16 @@ const (
 	//The body is \0 terminated TruncateJSON.
 	//The action has no response.
 	ActionTruncate = "truncate"
+
+	//The body is \0 terminated TransferJSON.
+	ActionTransfer = "transfer"
+
+	//The body is \0 terminated AcceptJSON followed by
+	//a sequnce of InternalLogEntryJSON.
+	//<AcceptJSON>\0<InternalLogEntryJSON>\0<InternalLogEntryJSON>\0...\0<InternalLogEntryJSON>\0\0
+	//
+	//The response is \0 terminated AcceptResultJSON.
+	ActionAccept = "accept"
 )
 
 //The message header that each message starts with.
@@ -111,12 +121,30 @@ type TruncateJSON struct {
 	Lim int64
 }
 
+//The transfer command.
+type TransferJSON struct {
+	Addr string
+	Lim  int64
+}
+
+//The accept command.
+type AcceptJSON struct {
+	Chunk string
+}
+
+//The result of 'accept' action.
+type AcceptResultJSON struct {
+	Result bool
+}
+
 //The interface which a protocol message handler must implement.
 type MessageHandler interface {
 	Write(chan *IncomingLogEntryJSON)
 	Read(chan *LogQueryJSON, chan *OutgoingLogEntryJSON)
 	InternalRead(chan *LogQueryJSON, chan *InternalLogEntryJSON)
 	Truncate(*TruncateJSON)
+	Transfer(*TransferJSON)
+	Accept(*AcceptJSON, chan *InternalLogEntryJSON, chan *AcceptResultJSON)
 	Close()
 }
 

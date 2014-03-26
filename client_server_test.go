@@ -70,6 +70,73 @@ func TestClientServer(t *testing.T) {
 		t.FailNow()
 	}
 
+	transferCmd := TransferJSON{":10000", 1024}
+	client.Transfer(&transferCmd)
+
+	select {
+	case cmd := <-messageHandler.transfers:
+		if cmd.Lim != transferCmd.Lim {
+			t.Error("Lim doesn't match.")
+			t.FailNow()
+		}
+
+		if cmd.Addr != transferCmd.Addr {
+			t.Error("Addr doesn't match.")
+			t.FailNow()
+		}
+	case <-time.After(time.Second * 10):
+		t.Error("Transfer has not arrived.")
+		t.FailNow()
+	}
+
+	acceptCmd := AcceptJSON{"src/file"}
+	acceptChan := make(chan *InternalLogEntryJSON)
+	acceptResult := make(chan *AcceptResultJSON)
+
+	client.Accept(&acceptCmd, acceptChan, acceptResult)
+
+	for i := 0; i < testLogEntriesCount; i++ {
+		m := &InternalLogEntryJSON{1, "src", EncodingPlain, "Message", timeToTimestamp(time.Now())}
+
+		acceptChan <- m
+	}
+
+	close(acceptChan)
+
+	select {
+	case cmd := <-messageHandler.accepts:
+		if cmd.Chunk != acceptCmd.Chunk {
+			t.Error("Chunk doesn't match.")
+			t.FailNow()
+		}
+	case <-time.After(time.Second * 10):
+		t.Error("Transfer has not arrived.")
+		t.FailNow()
+	}
+
+	acceptedMsgCnt := 0
+	for acceptedMsgCnt < testLogEntriesCount {
+		select {
+		case <-messageHandler.entriesAccepted:
+			acceptedMsgCnt++
+
+		case <-time.After(time.Second * 10):
+			t.Errorf("Accepted entries have not arrived. Expected %d, got %d.", testLogEntriesCount, acceptedMsgCnt)
+			t.FailNow()
+		}
+	}
+
+	select {
+	case cmd := <-acceptResult:
+		if !cmd.Result {
+			t.Error("Accept failed.")
+			t.FailNow()
+		}
+	case <-time.After(time.Second * 10):
+		t.Error("Accept result has not arrived.")
+		t.FailNow()
+	}
+
 	queries := make(chan *LogQueryJSON)
 	result := make(chan *OutgoingLogEntryJSON)
 

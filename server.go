@@ -116,6 +116,7 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 			if continueWriting {
 				writer.WriteDelimiter()
 			}
+
 		case ActionTruncate:
 			var cmd TruncateJSON
 
@@ -124,7 +125,54 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 				return
 			}
 
-			handler.Truncate(&cmd)
+			go handler.Truncate(&cmd)
+
+		case ActionTransfer:
+			var cmd TransferJSON
+
+			if err := reader.ReadJSON(&cmd); err != nil {
+				conn.Close()
+				return
+			}
+
+			go handler.Transfer(&cmd)
+
+		case ActionAccept:
+			var cmd AcceptJSON
+
+			if err := reader.ReadJSON(&cmd); err != nil {
+				conn.Close()
+				return
+			}
+
+			entChan := make(chan *InternalLogEntryJSON)
+			resultChan := make(chan *AcceptResultJSON)
+
+			go handler.Accept(&cmd, entChan, resultChan)
+
+			for {
+				ent := new(InternalLogEntryJSON)
+
+				if err := reader.ReadJSON(ent); err != nil {
+					close(entChan)
+
+					if err != ErrStreamDelimiter {
+						conn.Close()
+						return
+					}
+
+					break
+				}
+
+				entChan <- ent
+			}
+
+			result := <-resultChan
+
+			if err := writer.WriteJSON(result); err != nil {
+				conn.Close()
+				return
+			}
 		}
 	}
 }

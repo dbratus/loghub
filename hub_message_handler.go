@@ -63,6 +63,14 @@ func (mh *hubMessageHandler) Truncate(cmd *TruncateJSON) {
 	mh.hub.Truncate(cmd.Src, cmd.Lim)
 }
 
+func (mh *hubMessageHandler) Transfer(cmd *TransferJSON) {
+}
+
+func (mh *hubMessageHandler) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJSON, result chan *AcceptResultJSON) {
+	PurgeInternalLogEntryJSON(entries)
+	result <- &AcceptResultJSON{false}
+}
+
 func (mh *hubMessageHandler) Close() {
 	mh.hub.Close()
 }

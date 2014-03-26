@@ -70,6 +70,14 @@ func (mh *logMessageHandler) Truncate(cmd *TruncateJSON) {
 	mh.logManager.Truncate(cmd.Src, cmd.Lim)
 }
 
+func (mh *logMessageHandler) Transfer(cmd *TransferJSON) {
+	//TODO: Implement.
+}
+
+func (mh *logMessageHandler) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJSON, result chan *AcceptResultJSON) {
+	//TODO: Implement.
+}
+
 func (mh *logMessageHandler) Close() {
 	mh.logManager.Close()
 }

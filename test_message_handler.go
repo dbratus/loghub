@@ -21,6 +21,9 @@ type testMessageHandler struct {
 	outgoingEntriesToRead []*OutgoingLogEntryJSON
 	internalEntriesToRead []*InternalLogEntryJSON
 	truncations           chan *TruncateJSON
+	transfers             chan *TransferJSON
+	accepts               chan *AcceptJSON
+	entriesAccepted       chan *InternalLogEntryJSON
 	isClosed              *int32
 }
 
@@ -46,6 +49,9 @@ func newTestMessageHandler() *testMessageHandler {
 		outgoingEntriesToRead,
 		internalEntriesToRead,
 		make(chan *TruncateJSON),
+		make(chan *TransferJSON),
+		make(chan *AcceptJSON),
+		make(chan *InternalLogEntryJSON),
 		new(int32),
 	}
 }
@@ -83,6 +89,24 @@ func (mh *testMessageHandler) InternalRead(queries chan *LogQueryJSON, result ch
 func (mh *testMessageHandler) Truncate(cmd *TruncateJSON) {
 	if !mh.IsClosed() {
 		mh.truncations <- cmd
+	}
+}
+
+func (mh *testMessageHandler) Transfer(cmd *TransferJSON) {
+	if !mh.IsClosed() {
+		mh.transfers <- cmd
+	}
+}
+
+func (mh *testMessageHandler) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJSON, result chan *AcceptResultJSON) {
+	if !mh.IsClosed() {
+		mh.accepts <- cmd
+
+		for ent := range entries {
+			mh.entriesAccepted <- ent
+		}
+
+		result <- &AcceptResultJSON{true}
 	}
 }
 
