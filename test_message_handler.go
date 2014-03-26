@@ -28,7 +28,7 @@ func newTestMessageHandler() *testMessageHandler {
 	outgoingEntriesToRead := make([]*OutgoingLogEntryJSON, 0, testLogEntriesCount)
 
 	for i := 0; i < testLogEntriesCount; i++ {
-		m := &OutgoingLogEntryJSON{IncomingLogEntryJSON{1, "Source", "Message"}, time.Now().UnixNano()}
+		m := &OutgoingLogEntryJSON{IncomingLogEntryJSON{1, "Source", "Message"}, timeToTimestamp(time.Now())}
 
 		outgoingEntriesToRead = append(outgoingEntriesToRead, m)
 	}
@@ -36,7 +36,7 @@ func newTestMessageHandler() *testMessageHandler {
 	internalEntriesToRead := make([]*InternalLogEntryJSON, 0, testLogEntriesCount)
 
 	for i := 0; i < testLogEntriesCount; i++ {
-		m := &InternalLogEntryJSON{1, "Source", EncodingPlain, "Message", time.Now().UnixNano()}
+		m := &InternalLogEntryJSON{1, "Source", EncodingPlain, "Message", timeToTimestamp(time.Now())}
 
 		internalEntriesToRead = append(internalEntriesToRead, m)
 	}

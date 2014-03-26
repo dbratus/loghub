@@ -20,6 +20,8 @@ import (
 	"time"
 )
 
+const mergedFileSuffix = ".merged"
+
 var logManagerTrace = trace.New("LogManager")
 
 var logFileTimeout = time.Second * 30
@@ -40,24 +42,36 @@ type getTransferChunkCmd struct {
 	id      chan string
 }
 
+type acceptTransferChunkCmd struct {
+	id      string
+	entries chan *LogEntry
+	ack     chan bool
+}
+
 type delTransferChunkCmd struct {
-	id string
+	id  string
+	ack chan bool
 }
 
 type defaultLogManager struct {
-	home                 string
-	writeChan            chan *LogEntry
-	readChan             chan readLogCmd
-	sizeChan             chan chan int64
-	truncateChan         chan truncateLogCmd
-	getTransferChunkChan chan getTransferChunkCmd
-	delTransferChunkChan chan delTransferChunkCmd
-	closeChan            chan chan bool
+	home                    string
+	writeChan               chan *LogEntry
+	readChan                chan readLogCmd
+	sizeChan                chan chan int64
+	truncateChan            chan truncateLogCmd
+	getTransferChunkChan    chan getTransferChunkCmd
+	acceptTransferChunkChan chan acceptTransferChunkCmd
+	delTransferChunkChan    chan delTransferChunkCmd
+	closeChan               chan chan bool
 }
 
 type logSourceInfo struct {
 	lock    *rnglock.RangeLock
 	history *history.History
+}
+
+func newLogSourceInfo() *logSourceInfo {
+	return &logSourceInfo{rnglock.New(), history.New(time.Hour)}
 }
 
 func NewDefaultLogManager(home string) LogManager {
@@ -68,6 +82,7 @@ func NewDefaultLogManager(home string) LogManager {
 		make(chan chan int64),
 		make(chan truncateLogCmd),
 		make(chan getTransferChunkCmd),
+		make(chan acceptTransferChunkCmd),
 		make(chan delTransferChunkCmd),
 		make(chan chan bool),
 	}
@@ -97,12 +112,15 @@ func (mg *defaultLogManager) GetTransferChunk(maxSize int64, entries chan *LogEn
 }
 
 func (mg *defaultLogManager) AcceptTransferChunk(id string, entries chan *LogEntry) chan bool {
-	//TODO: Implement.
-	return nil
+	ack := make(chan bool)
+	mg.acceptTransferChunkChan <- acceptTransferChunkCmd{id, entries, ack}
+	return ack
 }
 
 func (mg *defaultLogManager) DeleteTransferChunk(id string) {
-	mg.delTransferChunkChan <- delTransferChunkCmd{id}
+	ack := make(chan bool)
+	mg.delTransferChunkChan <- delTransferChunkCmd{id, ack}
+	<-ack
 }
 
 func (mg *defaultLogManager) Size() int64 {
@@ -117,6 +135,7 @@ func (mg *defaultLogManager) Close() {
 	close(mg.sizeChan)
 	close(mg.truncateChan)
 	close(mg.getTransferChunkChan)
+	close(mg.acceptTransferChunkChan)
 	close(mg.delTransferChunkChan)
 
 	ack := make(chan bool)
@@ -139,7 +158,7 @@ func getSourceNameByDir(dir string) (string, error) {
 }
 
 func getFileNameForTimestamp(timestamp int64) string {
-	t := time.Unix(0, timestamp)
+	t := timestampToTime(timestamp)
 	return fmt.Sprintf("%.4d.%.2d.%.2d.%.2d", t.Year(), int(t.Month()), t.Day(), t.Hour())
 }
 
@@ -149,8 +168,8 @@ func getRangeByFileName(fileName string) (start int64, end int64) {
 		end = maxTimestamp
 
 	} else {
-		start = st.UnixNano()
-		end = st.Add(time.Hour - time.Nanosecond).UnixNano()
+		start = timeToTimestamp(st)
+		end = timeToTimestamp(st.Add(time.Hour - time.Nanosecond))
 	}
 
 	return
@@ -175,8 +194,8 @@ func parseLogFileName(fileName string) (source string, ts string) {
 }
 
 func getLogFileNamesForRange(sources []string, minTimestamp int64, maxTimestamp int64, fileNames chan string) {
-	minHour := time.Unix(0, minTimestamp).Truncate(time.Hour).UnixNano()
-	maxHour := time.Unix(0, maxTimestamp).Truncate(time.Hour).UnixNano()
+	minHour := timeToTimestamp(timestampToTime(minTimestamp).Truncate(time.Hour))
+	maxHour := timeToTimestamp(timestampToTime(maxTimestamp).Truncate(time.Hour))
 
 	for _, src := range sources {
 		for curTs := minHour; curTs <= maxHour; curTs += int64(time.Hour) {
@@ -193,10 +212,10 @@ func getMaxOpenFiles() uint64 {
 	return (lim.Cur / 4) * 3
 }
 
-func initLogManager(home string) (logSources map[string]*logSourceInfo, size int64, initialized bool) {
+func initLogManager(home string) (logSources map[string]*logSourceInfo, size *int64, initialized bool) {
 	initialized = true
 	logSources = make(map[string]*logSourceInfo)
-	size = 0
+	size = new(int64)
 
 	if homeDir, err := os.Open(home); err == nil {
 		defer homeDir.Close()
@@ -204,19 +223,46 @@ func initLogManager(home string) (logSources map[string]*logSourceInfo, size int
 		if dirnames, err := homeDir.Readdirnames(0); err == nil {
 			for _, dir := range dirnames {
 				if src, err := getSourceNameByDir(dir); err == nil {
-					srcInfo := &logSourceInfo{rnglock.New(), history.New(time.Hour)}
+					srcInfo := newLogSourceInfo()
 
 					logSources[src] = srcInfo
 
-					if srcDir, err := os.Open(home + "/" + dir); err == nil {
+					srcDirName := home + "/" + dir
+
+					if srcDir, err := os.Open(srcDirName); err == nil {
 						defer srcDir.Close()
 
 						if logFiles, err := srcDir.Readdir(0); err == nil {
-							for _, logFile := range logFiles {
-								size += logFile.Size()
-								start, _ := getRangeByFileName(logFile.Name())
+							for _, dirFile := range logFiles {
+								if strings.HasSuffix(dirFile.Name(), mergedFileSuffix) {
+									//The file is being merged.
 
-								srcInfo.history.Append(time.Unix(0, start))
+									logFileName := strings.TrimSuffix(dirFile.Name(), mergedFileSuffix)
+									logFilePath := srcDirName + "/" + logFileName
+
+									//If the source of the merge exists,
+									//the file may not have been merged completely,
+									//so it must be removed; otherwise, it must be
+									//remaned and treated as a normal log file.
+									if _, err = os.Stat(logFileName); os.IsNotExist(err) {
+										os.Rename(srcDirName+"/"+dirFile.Name(), logFilePath)
+
+										*size += dirFile.Size()
+										start, _ := getRangeByFileName(logFileName)
+
+										srcInfo.history.Append(timestampToTime(start))
+									} else {
+										os.Remove(srcDirName + "/" + dirFile.Name())
+									}
+
+								} else {
+									//The file is a normal log file.
+
+									*size += dirFile.Size()
+									start, _ := getRangeByFileName(dirFile.Name())
+
+									srcInfo.history.Append(timestampToTime(start))
+								}
 							}
 						} else {
 							logManagerTrace.Errorf("Initialization failed: %s.", err.Error())
@@ -276,9 +322,9 @@ func (mg *defaultLogManager) run() {
 	}
 
 	waitAndCloseFile := func(fileName string, timeout *int64) {
-		for tmUnix := atomic.LoadInt64(timeout); ; {
+		for ts := atomic.LoadInt64(timeout); ; {
 			now := time.Now()
-			tm := time.Unix(0, tmUnix)
+			tm := timestampToTime(ts)
 
 			if tm.After(now) {
 				<-time.After(tm.Sub(now))
@@ -293,7 +339,7 @@ func (mg *defaultLogManager) run() {
 	onClose := func(logFileToClose string) {
 		if logFile, found := openLogFiles[logFileToClose]; found {
 			//Tracking the closed files' size.
-			closedSize += logFile.Size()
+			atomic.AddInt64(closedSize, logFile.Size())
 
 			logFile.Close()
 
@@ -302,7 +348,7 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
-	getLogFile := func(fileName string, create bool) (LogStorage, error) {
+	getLogFile := func(fileName string, create bool, register bool) (LogStorage, error) {
 		if logFile, found := openLogFiles[fileName]; !found {
 			srcDir := mg.home + "/" + fileName[0:strings.LastIndex(fileName, "/")]
 
@@ -353,16 +399,18 @@ func (mg *defaultLogManager) run() {
 
 			//Opening the file.
 			if logFile, err := OpenLogFile(mg.home+"/"+fileName, create); err == nil {
-				openLogFiles[fileName] = logFile
+				if register {
+					openLogFiles[fileName] = logFile
 
-				//Tracking the closed files' size.
-				closedSize -= logFile.Size()
+					//Tracking the closed files' size.
+					atomic.AddInt64(closedSize, -logFile.Size())
 
-				timeout := new(int64)
-				*timeout = time.Now().Add(logFileTimeout).UnixNano()
-				logFileTimeouts[fileName] = timeout
+					timeout := new(int64)
+					*timeout = timeToTimestamp(time.Now().Add(logFileTimeout))
+					logFileTimeouts[fileName] = timeout
 
-				go waitAndCloseFile(fileName, timeout)
+					go waitAndCloseFile(fileName, timeout)
+				}
 
 				return logFile, nil
 			} else {
@@ -370,7 +418,7 @@ func (mg *defaultLogManager) run() {
 			}
 		} else {
 			if timeout, found := logFileTimeouts[fileName]; found {
-				atomic.StoreInt64(timeout, time.Now().Add(logFileTimeout).UnixNano())
+				atomic.StoreInt64(timeout, timeToTimestamp(time.Now().Add(logFileTimeout)))
 			}
 
 			return logFile, nil
@@ -402,7 +450,7 @@ func (mg *defaultLogManager) run() {
 		var results chan *LogEntry = nil
 
 		for fileName := range fileNames {
-			if logFile, err := getLogFile(fileName, false); err == nil {
+			if logFile, err := getLogFile(fileName, false, true); err == nil {
 				res := make(chan *LogEntry)
 
 				logFile.ReadLog(cmd.query, res)
@@ -435,22 +483,22 @@ func (mg *defaultLogManager) run() {
 	onWrite := func(ent *LogEntry) {
 		if initialized {
 			if ent.Timestamp == 0 {
-				ent.Timestamp = time.Now().UnixNano()
+				ent.Timestamp = timeToTimestamp(time.Now())
 			}
 
 			logFileToWrite := getLogFileNameForEntry(ent)
 			var srcInfo *logSourceInfo
 
 			if inf, found := logSources[ent.Source]; !found {
-				srcInfo = &logSourceInfo{rnglock.New(), history.New(time.Hour)}
+				srcInfo = newLogSourceInfo()
 				logSources[ent.Source] = srcInfo
 			} else {
 				srcInfo = inf
 			}
 
-			srcInfo.history.Append(time.Unix(0, ent.Timestamp))
+			srcInfo.history.Append(timestampToTime(ent.Timestamp))
 
-			if logFile, err := getLogFile(logFileToWrite, true); err == nil {
+			if logFile, err := getLogFile(logFileToWrite, true, true); err == nil {
 				logFile.WriteLog(ent)
 			} else {
 				logManagerTrace.Errorf("Failed to obtain log file: %s.", err.Error())
@@ -473,7 +521,7 @@ func (mg *defaultLogManager) run() {
 	}
 
 	onSize := func(sz chan int64) {
-		size := closedSize
+		size := atomic.LoadInt64(closedSize)
 
 		for _, logFile := range openLogFiles {
 			size += logFile.Size()
@@ -494,14 +542,15 @@ func (mg *defaultLogManager) run() {
 		defer srcInfo.lock.Unlock(lck)
 
 		srcDirName := mg.home + "/" + getSourceDirName(src)
-		minTs := srcInfo.history.Start().UnixNano()
+		minTs := timeToTimestamp(srcInfo.history.Start())
 
 		for minTs <= limit {
 			if err := os.Remove(srcDirName + "/" + getFileNameForTimestamp(minTs)); err != nil {
 				logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
 			}
 
-			srcInfo.history.Truncate(time.Unix(0, minTs))
+			//TODO: Track size!
+			srcInfo.history.Truncate(timestampToTime(minTs))
 
 			if srcInfo.history.IsEmpty() {
 				if err := os.RemoveAll(srcDirName); err != nil {
@@ -511,7 +560,7 @@ func (mg *defaultLogManager) run() {
 				deleteLogSource(src)
 				break
 			} else {
-				minTs = srcInfo.history.Start().UnixNano()
+				minTs = timeToTimestamp(srcInfo.history.Start())
 			}
 		}
 	}
@@ -543,16 +592,16 @@ func (mg *defaultLogManager) run() {
 	onGetTransferChunk := func(cmd getTransferChunkCmd) {
 		for src, srcInfo := range logSources {
 			if srcInfo.history.Start().Before(time.Now().Truncate(time.Hour)) {
-				chunkId := getSourceDirName(src) + "/" + getFileNameForTimestamp(srcInfo.history.Start().UnixNano())
+				chunkId := getSourceDirName(src) + "/" + getFileNameForTimestamp(timeToTimestamp(srcInfo.history.Start()))
 				fileName := mg.home + "/" + chunkId
 
 				if stat, err := os.Stat(fileName); err == nil && stat.Size() < cmd.maxSize {
-					rangeStart := srcInfo.history.Start().UnixNano()
-					rangeEnd := srcInfo.history.Start().Add(time.Hour).UnixNano()
+					rangeStart := timeToTimestamp(srcInfo.history.Start())
+					rangeEnd := timeToTimestamp(srcInfo.history.Start().Add(time.Hour - time.Nanosecond))
 
 					lck := srcInfo.lock.Lock(opCnt, rangeStart, rangeEnd, true)
 
-					if logFile, err := getLogFile(chunkId, false); err == nil {
+					if logFile, err := getLogFile(chunkId, false, true); err == nil {
 						cmd.id <- chunkId
 						close(cmd.id)
 
@@ -576,6 +625,117 @@ func (mg *defaultLogManager) run() {
 		close(cmd.id)
 	}
 
+	onAcceptTransferChunk := func(cmd acceptTransferChunkCmd) {
+		src, ts := parseLogFileName(cmd.id)
+
+		var srcInfo *logSourceInfo
+
+		if inf, found := logSources[src]; !found {
+			srcInfo = newLogSourceInfo()
+		} else {
+			srcInfo = inf
+		}
+
+		fileName := mg.home + "/" + cmd.id
+		rangeStart, rangeEnd := getRangeByFileName(ts)
+
+		lck := srcInfo.lock.Lock(opCnt, rangeStart, rangeEnd, false)
+
+		onError := func() {
+			PurgeLog(cmd.entries)
+			srcInfo.lock.Unlock(lck)
+			cmd.ack <- false
+		}
+
+		onClose(cmd.id)
+
+		if stat, err := os.Stat(fileName); os.IsNotExist(err) {
+			if logFile, err := getLogFile(cmd.id, true, false); err == nil {
+				go func() {
+					for ent := range cmd.entries {
+						logFile.WriteLog(ent)
+					}
+
+					logFile.Close()
+
+					if stat, err = os.Stat(fileName); err == nil {
+						atomic.AddInt64(closedSize, stat.Size())
+					}
+
+					srcInfo.lock.Unlock(lck)
+					cmd.ack <- true
+				}()
+			} else {
+				logManagerTrace.Errorf("Failed to get log file for transfer chunk: %s.", err.Error())
+				go onError()
+				return
+			}
+		} else if err == nil {
+			atomic.AddInt64(closedSize, -stat.Size())
+
+			if logFile, err := getLogFile(cmd.id, false, false); err == nil {
+				entriesRead := make(chan *LogEntry)
+				mergedEntries := make(chan *LogEntry)
+
+				logFile.ReadLog(&LogQuery{rangeStart, rangeEnd, minSeverity, maxSeverity, ""}, entriesRead)
+				go MergeLogs(cmd.entries, entriesRead, mergedEntries)
+
+				mergedFileName := fileName + mergedFileSuffix
+
+				if mergedLogFile, err := OpenLogFile(mergedFileName, true); err == nil {
+					go func() {
+						for ent := range mergedEntries {
+							mergedLogFile.WriteLog(ent)
+						}
+
+						mergedLogFile.Close()
+
+						logFile.Close()
+
+						if err := os.Remove(fileName); err != nil {
+							logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
+							srcInfo.lock.Unlock(lck)
+							cmd.ack <- false
+							return
+						}
+
+						if err := os.Rename(mergedFileName, fileName); err != nil {
+							logManagerTrace.Errorf("Failed to rename log file: %s.", err.Error())
+							srcInfo.lock.Unlock(lck)
+							cmd.ack <- false
+							return
+						}
+
+						if stat, err = os.Stat(fileName); err == nil {
+							atomic.AddInt64(closedSize, stat.Size())
+						} else {
+							logManagerTrace.Errorf("Failed to get stat of renamed file: %s.", err.Error())
+						}
+
+						srcInfo.lock.Unlock(lck)
+						cmd.ack <- true
+					}()
+				} else {
+					logManagerTrace.Errorf("Failed to open log file for merge: %s.", err.Error())
+
+					go func() {
+						PurgeLog(mergedEntries)
+						srcInfo.lock.Unlock(lck)
+						cmd.ack <- false
+					}()
+				}
+			} else {
+				logManagerTrace.Errorf("Failed to get log file for merge: %s.", err.Error())
+				go onError()
+				return
+			}
+		} else {
+			logManagerTrace.Errorf("Failed to get stat: %s.", err.Error())
+			go onError()
+			return
+		}
+	}
+
 	onDeleteTransferChunk := func(cmd delTransferChunkCmd) {
 		src, ts := parseLogFileName(cmd.id)
 
@@ -586,14 +746,25 @@ func (mg *defaultLogManager) run() {
 				rangeStart, rangeEnd := getRangeByFileName(ts)
 
 				lck := srcInfo.lock.Lock(opCnt, rangeStart, rangeEnd, false)
-				defer srcInfo.lock.Unlock(lck)
 
 				onClose(cmd.id)
 
-				if err := os.Remove(fileName); err == nil {
-					closedSize -= stat.Size()
-				}
+				go func() {
+					if err := os.Remove(fileName); err == nil {
+						atomic.AddInt64(closedSize, -stat.Size())
+					}
+
+					srcInfo.lock.Unlock(lck)
+					cmd.ack <- true
+					close(cmd.ack)
+				}()
+			} else {
+				cmd.ack <- false
+				close(cmd.ack)
 			}
+		} else {
+			cmd.ack <- false
+			close(cmd.ack)
 		}
 	}
 
@@ -631,6 +802,11 @@ func (mg *defaultLogManager) run() {
 				onGetTransferChunk(cmd)
 			}
 
+		case cmd, ok := <-mg.acceptTransferChunkChan:
+			if ok {
+				onAcceptTransferChunk(cmd)
+			}
+
 		case cmd, ok := <-mg.delTransferChunkChan:
 			if ok {
 				onDeleteTransferChunk(cmd)
@@ -654,6 +830,11 @@ func (mg *defaultLogManager) run() {
 			for cmd := range mg.getTransferChunkChan {
 				close(cmd.entries)
 				close(cmd.id)
+			}
+
+			for cmd := range mg.acceptTransferChunkChan {
+				PurgeLog(cmd.entries)
+				close(cmd.ack)
 			}
 
 			for cmd := range mg.delTransferChunkChan {

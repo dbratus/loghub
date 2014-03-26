@@ -6,7 +6,7 @@
 package main
 
 import (
-	//"github.com/dbratus/loghub/trace"
+	"github.com/dbratus/loghub/trace"
 	"os"
 	"testing"
 	"time"
@@ -16,11 +16,11 @@ func getTestLogHome() string {
 	return os.TempDir() + "loghub.test.home"
 }
 
-func makeTestLogHome() {
-	homePath := getTestLogHome()
+func getAltTestLogHome() string {
+	return os.TempDir() + "loghub.test.home.alt"
+}
 
-	//println(homePath)
-
+func makeTestLogHome(homePath string) {
 	if stat, err := os.Stat(homePath); err != nil {
 		if os.IsNotExist(err) {
 			if e := os.Mkdir(homePath, 0777); e != nil {
@@ -40,14 +40,13 @@ func makeTestLogHome() {
 	}
 }
 
-func deleteTestLogHome() {
-	homePath := getTestLogHome()
+func deleteTestLogHome(homePath string) {
 	os.RemoveAll(homePath)
 }
 
 func TestWriteReadLog(t *testing.T) {
-	makeTestLogHome()
-	defer deleteTestLogHome()
+	makeTestLogHome(getTestLogHome())
+	defer deleteTestLogHome(getTestLogHome())
 
 	sources := [...]string{"src1", "src2", "src3"}
 
@@ -79,7 +78,7 @@ func TestWriteReadLog(t *testing.T) {
 	logManager = NewDefaultLogManager(getTestLogHome())
 
 	qResult := make(chan *LogEntry)
-	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src."}, qResult)
+	logManager.ReadLog(&LogQuery{timeToTimestamp(beforeWrite), timeToTimestamp(afterWrite), 1, 1, "src."}, qResult)
 	entCnt := 0
 
 	for _ = range qResult {
@@ -117,7 +116,7 @@ func TestWriteReadLog(t *testing.T) {
 
 	logManager = NewDefaultLogManager(getTestLogHome())
 	qResult = make(chan *LogEntry)
-	logManager.ReadLog(&LogQuery{beforeWrite.UnixNano(), afterWrite.UnixNano(), 1, 1, "src."}, qResult)
+	logManager.ReadLog(&LogQuery{timeToTimestamp(beforeWrite), timeToTimestamp(afterWrite), 1, 1, "src."}, qResult)
 	entCnt = 0
 
 	for _ = range qResult {
@@ -136,8 +135,8 @@ func TestTruncate(t *testing.T) {
 	//trace.SetTraceLevel(trace.LevelDebug)
 	//defer trace.SetTraceLevel(trace.LevelInfo)
 
-	makeTestLogHome()
-	defer deleteTestLogHome()
+	makeTestLogHome(getTestLogHome())
+	defer deleteTestLogHome(getTestLogHome())
 
 	sources := [...]string{"src1", "src2", "src3"}
 
@@ -149,7 +148,7 @@ func TestTruncate(t *testing.T) {
 	for _, src := range sources {
 		for i := 0; i < entriesPerSource; i++ {
 			ent := &LogEntry{
-				baseTs.Add(time.Hour * time.Duration(i)).UnixNano(),
+				timeToTimestamp(baseTs.Add(time.Hour * time.Duration(i))),
 				1,
 				src,
 				EncodingPlain,
@@ -162,8 +161,8 @@ func TestTruncate(t *testing.T) {
 
 	qResult := make(chan *LogEntry)
 	logManager.ReadLog(&LogQuery{
-		baseTs.UnixNano(),
-		baseTs.Add(time.Hour * time.Duration(entriesPerSource)).UnixNano(),
+		timeToTimestamp(baseTs),
+		timeToTimestamp(baseTs.Add(time.Hour * time.Duration(entriesPerSource))),
 		1,
 		1,
 		"src.",
@@ -179,12 +178,12 @@ func TestTruncate(t *testing.T) {
 		t.FailNow()
 	}
 
-	logManager.Truncate("src.", baseTs.Add(time.Hour*time.Duration(entriesPerSource/2)).UnixNano())
+	logManager.Truncate("src.", timeToTimestamp(baseTs.Add(time.Hour*time.Duration(entriesPerSource/2))))
 
 	qResult = make(chan *LogEntry)
 	logManager.ReadLog(&LogQuery{
-		baseTs.UnixNano(),
-		baseTs.Add(time.Hour * time.Duration(entriesPerSource)).UnixNano(),
+		timeToTimestamp(baseTs),
+		timeToTimestamp(baseTs.Add(time.Hour * time.Duration(entriesPerSource))),
 		1,
 		1,
 		"src.",
@@ -200,47 +199,76 @@ func TestTruncate(t *testing.T) {
 		t.FailNow()
 	}
 
+	//TODO: Check size!
+
 	logManager.Close()
 }
 
 func TestTransfer(t *testing.T) {
-	makeTestLogHome()
-	defer deleteTestLogHome()
+	trace.SetTraceLevel(trace.LevelDebug)
+	defer trace.SetTraceLevel(trace.LevelInfo)
+
+	makeTestLogHome(getTestLogHome())
+	defer deleteTestLogHome(getTestLogHome())
+	makeTestLogHome(getAltTestLogHome())
+	defer deleteTestLogHome(getAltTestLogHome())
 
 	sources := [...]string{"src1", "src2", "src3"}
 
 	entriesPerSource := 10
 	logManager := NewDefaultLogManager(getTestLogHome())
+	logManagerAlt := NewDefaultLogManager(getAltTestLogHome())
+
+	defer logManager.Close()
+	defer logManagerAlt.Close()
 
 	nHours := 3
 	thisHour := time.Now().Truncate(time.Hour)
 
-	for i := 0; i < nHours; i++ {
-		baseTs := thisHour.Add(time.Hour * time.Duration(i-nHours))
+	populateLogs := func(logManager LogManager, shift time.Duration) {
+		for i := 0; i < nHours; i++ {
+			baseTs := thisHour.Add(time.Hour * time.Duration(i-nHours))
 
-		for _, src := range sources {
-			for j := 0; j < entriesPerSource; j++ {
-				ent := &LogEntry{
-					baseTs.Add(time.Minute * time.Duration(j)).UnixNano(),
-					1,
-					src,
-					EncodingPlain,
-					[]byte("Message"),
+			for _, src := range sources {
+				for j := 0; j < entriesPerSource; j++ {
+					ent := &LogEntry{
+						timeToTimestamp(baseTs.Add(time.Minute*time.Duration(j) + shift)),
+						1,
+						src,
+						EncodingPlain,
+						[]byte("Message"),
+					}
+
+					logManager.WriteLog(ent)
 				}
-
-				logManager.WriteLog(ent)
 			}
 		}
 	}
+
+	populateLogs(logManager, time.Millisecond)
+	populateLogs(logManagerAlt, time.Duration(0))
 
 	entries := make(chan *LogEntry)
 	gb := int64(1024 * 1024 * 1024)
 
 	if chunkId, found := logManager.GetTransferChunk(gb, entries); found {
 		cnt := 0
+		initialLogSize := logManager.Size()
+		initialAltLogSize := logManagerAlt.Size()
 
-		for _ = range entries {
+		inpEntries := make(chan *LogEntry)
+		ack := logManagerAlt.AcceptTransferChunk(chunkId, inpEntries)
+
+		for ent := range entries {
 			cnt++
+			inpEntries <- ent
+		}
+
+		close(inpEntries)
+
+		if !<-ack {
+			t.Errorf("Failed to accept transfer chunk.")
+			t.FailNow()
 		}
 
 		if cnt < entriesPerSource {
@@ -248,15 +276,17 @@ func TestTransfer(t *testing.T) {
 			t.FailNow()
 		}
 
-		initialLogSize := logManager.Size()
-
 		logManager.DeleteTransferChunk(chunkId)
 
-		if logManager.Size() >= initialLogSize {
-			t.Error("Log must shrink after transfer chunk deletion.")
+		if sz := logManager.Size(); sz >= initialLogSize {
+			t.Errorf("Source log must shrink after transfer chunk deletion.. Was %d, became %d.", initialLogSize, sz)
 			t.FailNow()
 		}
 
+		if sz := logManagerAlt.Size(); sz <= initialAltLogSize {
+			t.Errorf("Destination log must grow after transfer chunk deletion. Was %d, became %d.", initialAltLogSize, sz)
+			t.FailNow()
+		}
 	} else {
 		t.Error("Transfer chunk not found.")
 		t.FailNow()

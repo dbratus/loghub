@@ -183,11 +183,11 @@ func getCommand(args []string) {
 	var from, to int64
 
 	if *rng < 0 {
-		from = base.Add(*rng).UnixNano()
-		to = base.UnixNano()
+		from = timeToTimestamp(base.Add(*rng))
+		to = timeToTimestamp(base)
 	} else {
-		from = base.UnixNano()
-		to = base.Add(*rng).UnixNano()
+		from = timeToTimestamp(base)
+		to = timeToTimestamp(base.Add(*rng))
 	}
 
 	client := NewLogHubClient(*addr, 1)
@@ -209,7 +209,7 @@ func getCommand(args []string) {
 	close(queries)
 
 	formatText := func(ent *OutgoingLogEntryJSON) {
-		fmt.Printf(*format, time.Unix(0, ent.Ts).Format(*tsfmt), ent.Src, ent.Sev, ent.Msg)
+		fmt.Printf(*format, timestampToTime(ent.Ts).Format(*tsfmt), ent.Src, ent.Sev, ent.Msg)
 		fmt.Println()
 	}
 
@@ -291,13 +291,13 @@ func truncateCommand(args []string) {
 	defer client.Close()
 
 	if *src == "" {
-		client.Truncate(&TruncateJSON{*src, time.Now().Add(*lim).UnixNano()})
+		client.Truncate(&TruncateJSON{*src, timeToTimestamp(time.Now().Add(*lim))})
 	} else {
 		for _, s := range strings.Split(*src, ",") {
 			client.Truncate(
 				&TruncateJSON{
 					strings.Trim(s, " "),
-					time.Now().Add(*lim).UnixNano(),
+					timeToTimestamp(time.Now().Add(*lim)),
 				},
 			)
 		}

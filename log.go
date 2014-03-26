@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"compress/flate"
+	"time"
 )
 
 const (
@@ -104,4 +105,12 @@ func DecodeMessage(msg []byte, encoding int) string {
 	} else {
 		return string(msg)
 	}
+}
+
+func timeToTimestamp(t time.Time) int64 {
+	return t.UnixNano()
+}
+
+func timestampToTime(t int64) time.Time {
+	return time.Unix(0, t).UTC()
 }

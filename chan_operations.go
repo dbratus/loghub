@@ -61,6 +61,11 @@ func ForwardLog(from chan *LogEntry, to chan *LogEntry) {
 	close(to)
 }
 
+func PurgeLog(log chan *LogEntry) {
+	for _ = range log {
+	}
+}
+
 func PurgeIncomingLogEntryJSON(entries chan *IncomingLogEntryJSON) {
 	for _ = range entries {
 	}

@@ -49,7 +49,7 @@ func startLogStatSender(hubAddr string, log LogManager, port int, resistanceLeve
 
 		sendStat := func() {
 			stat := &LogStat{
-				time.Now().UnixNano(),
+				timeToTimestamp(time.Now()),
 				log.Size(),
 				resistanceLevel,
 				port,
