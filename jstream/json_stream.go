@@ -3,7 +3,7 @@
 // The use of this source code is governed by the license
 // that can be found in the LICENSE file.
 
-package main
+package jstream
 
 import (
 	"bufio"
@@ -14,34 +14,34 @@ import (
 
 var ErrStreamDelimiter = errors.New("Stream delimiter encountered")
 
-var jsonStreamDelimiter = [...]byte{byte(0)}
+var streamDelimiter = [...]byte{byte(0)}
 
-type JSONStreamReader interface {
+type Reader interface {
 	ReadJSON(interface{}) error
 }
 
-type JSONStreamWriter interface {
+type Writer interface {
 	WriteJSON(interface{}) error
 	WriteDelimiter() error
 }
 
-type jsonStreamReader struct {
+type streamReader struct {
 	reader *bufio.Reader
 }
 
-type jsonStreamWriter struct {
+type streamWriter struct {
 	writer io.Writer
 }
 
-func NewJSONStreamReader(reader io.Reader) JSONStreamReader {
-	return &jsonStreamReader{bufio.NewReader(reader)}
+func NewReader(reader io.Reader) Reader {
+	return &streamReader{bufio.NewReader(reader)}
 }
 
-func NewJSONStreamWriter(writer io.Writer) JSONStreamWriter {
-	return &jsonStreamWriter{writer}
+func NewWriter(writer io.Writer) Writer {
+	return &streamWriter{writer}
 }
 
-func (r *jsonStreamReader) ReadJSON(target interface{}) error {
+func (r *streamReader) ReadJSON(target interface{}) error {
 	if bytes, err := r.reader.ReadBytes(byte(0)); err == nil {
 		if len(bytes) == 1 { //The buffer contains only the delimiter.
 			return ErrStreamDelimiter
@@ -57,7 +57,7 @@ func (r *jsonStreamReader) ReadJSON(target interface{}) error {
 	}
 }
 
-func (w *jsonStreamWriter) WriteJSON(source interface{}) error {
+func (w *streamWriter) WriteJSON(source interface{}) error {
 	if bytes, err := json.Marshal(source); err == nil {
 		if _, err = w.writer.Write(bytes); err != nil {
 			return err
@@ -73,8 +73,8 @@ func (w *jsonStreamWriter) WriteJSON(source interface{}) error {
 	}
 }
 
-func (w *jsonStreamWriter) WriteDelimiter() error {
-	if _, err := w.writer.Write(jsonStreamDelimiter[:]); err != nil {
+func (w *streamWriter) WriteDelimiter() error {
+	if _, err := w.writer.Write(streamDelimiter[:]); err != nil {
 		return err
 	}
 

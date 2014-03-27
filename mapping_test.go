@@ -6,6 +6,7 @@
 package main
 
 import (
+	"github.com/dbratus/loghub/lhproto"
 	"strings"
 	"testing"
 )
@@ -50,7 +51,7 @@ func TestLogEntryMapping(t *testing.T) {
 	msg := strings.Repeat("Message", PlainMessageMaxLength)
 	ts := int64(10000)
 
-	incomingLogEntry := &IncomingLogEntryJSON{sev, src, msg}
+	incomingLogEntry := &lhproto.IncomingLogEntryJSON{sev, src, msg}
 	logEntry := IncomingLogEntryJSONToLogEntry(incomingLogEntry)
 	logEntry.Timestamp = ts
 	outgoingLogEntry := LogEntryToOutgoingLogEntryJSON(logEntry)
@@ -123,7 +124,7 @@ func TestLogEntryMapping(t *testing.T) {
 }
 
 func TestLogQueryMapping(t *testing.T) {
-	logQueryJSON := LogQueryJSON{1, 2, 3, 4, "Source"}
+	logQueryJSON := lhproto.LogQueryJSON{1, 2, 3, 4, "Source"}
 	logQuery := LogQueryJSONToLogQuery(&logQueryJSON)
 
 	if logQuery.From != logQueryJSON.From {

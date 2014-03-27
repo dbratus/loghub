@@ -3,10 +3,11 @@
 // The use of this source code is governed by the license
 // that can be found in the LICENSE file.
 
-package main
+package lhproto
 
 import (
 	"container/list"
+	"github.com/dbratus/loghub/jstream"
 	"github.com/dbratus/loghub/trace"
 	"net"
 	"runtime"
@@ -26,7 +27,7 @@ type logHubClient struct {
 	activeOps      *int32
 }
 
-func NewLogHubClient(address string, connPoolSize int) MessageHandler {
+func NewClient(address string, connPoolSize int) ProtocolHandler {
 	cli := &logHubClient{
 		connPoolSize,
 		address,
@@ -136,7 +137,7 @@ func (cli *logHubClient) Write(entries chan *IncomingLogEntryJSON) {
 		conn = c
 	}
 
-	writer := NewJSONStreamWriter(conn)
+	writer := jstream.NewWriter(conn)
 
 	header := MessageHeaderJSON{ActionWrite}
 	if err := writer.WriteJSON(&header); err != nil {
@@ -188,7 +189,7 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 		conn = c
 	}
 
-	writer := NewJSONStreamWriter(conn)
+	writer := jstream.NewWriter(conn)
 
 	header := MessageHeaderJSON{ActionRead}
 	if err := writer.WriteJSON(&header); err != nil {
@@ -217,13 +218,13 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 				clientTrace.Errorf("Failed to write message: %s.", err.Error())
 				cli.brokenConnChan <- conn
 			} else {
-				reader := NewJSONStreamReader(conn)
+				reader := jstream.NewReader(conn)
 
 				for {
 					ent := new(OutgoingLogEntryJSON)
 
 					if err := reader.ReadJSON(ent); err != nil {
-						if err != ErrStreamDelimiter {
+						if err != jstream.ErrStreamDelimiter {
 							clientTrace.Errorf("Failed to read message: %s.", err.Error())
 							ok = false
 						}
@@ -262,7 +263,7 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 		conn = c
 	}
 
-	writer := NewJSONStreamWriter(conn)
+	writer := jstream.NewWriter(conn)
 
 	header := MessageHeaderJSON{ActionInternalRead}
 	if err := writer.WriteJSON(&header); err != nil {
@@ -291,13 +292,13 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 				clientTrace.Errorf("Failed to write message: %s.", err.Error())
 				cli.brokenConnChan <- conn
 			} else {
-				reader := NewJSONStreamReader(conn)
+				reader := jstream.NewReader(conn)
 
 				for {
 					ent := new(InternalLogEntryJSON)
 
 					if err := reader.ReadJSON(ent); err != nil {
-						if err != ErrStreamDelimiter {
+						if err != jstream.ErrStreamDelimiter {
 							clientTrace.Errorf("Failed to read message: %s.", err.Error())
 							ok = false
 						}
@@ -333,7 +334,7 @@ func (cli *logHubClient) Truncate(cmd *TruncateJSON) {
 		conn = c
 	}
 
-	writer := NewJSONStreamWriter(conn)
+	writer := jstream.NewWriter(conn)
 
 	header := MessageHeaderJSON{ActionTruncate}
 	if err := writer.WriteJSON(&header); err != nil {
@@ -362,7 +363,7 @@ func (cli *logHubClient) Transfer(cmd *TransferJSON) {
 		conn = c
 	}
 
-	writer := NewJSONStreamWriter(conn)
+	writer := jstream.NewWriter(conn)
 
 	header := MessageHeaderJSON{ActionTransfer}
 	if err := writer.WriteJSON(&header); err != nil {
@@ -397,8 +398,8 @@ func (cli *logHubClient) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJ
 		conn = c
 	}
 
-	writer := NewJSONStreamWriter(conn)
-	reader := NewJSONStreamReader(conn)
+	writer := jstream.NewWriter(conn)
+	reader := jstream.NewReader(conn)
 
 	header := MessageHeaderJSON{ActionAccept}
 	if err := writer.WriteJSON(&header); err != nil {

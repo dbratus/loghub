@@ -6,6 +6,7 @@
 package main
 
 import (
+	"github.com/dbratus/loghub/lhproto"
 	"github.com/dbratus/loghub/trace"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ func TestClientServer(t *testing.T) {
 	//defer trace.SetTraceLevel(trace.LevelError)
 
 	serverAddress := ":9999"
-	messageHandler := newTestMessageHandler()
+	messageHandler := newTestProtocolHandler()
 	var closeServer func()
 
 	if c, err := startServer(serverAddress, messageHandler); err != nil {
@@ -26,13 +27,13 @@ func TestClientServer(t *testing.T) {
 		closeServer = c
 	}
 
-	client := NewLogHubClient(serverAddress, 1)
+	client := lhproto.NewClient(serverAddress, 1)
 
-	entriesToWrite := make(chan *IncomingLogEntryJSON)
+	entriesToWrite := make(chan *lhproto.IncomingLogEntryJSON)
 	client.Write(entriesToWrite)
 
 	for i := 0; i < testLogEntriesCount; i++ {
-		m := &IncomingLogEntryJSON{1, "Source", "Message"}
+		m := &lhproto.IncomingLogEntryJSON{1, "Source", "Message"}
 
 		entriesToWrite <- m
 	}
@@ -51,7 +52,7 @@ func TestClientServer(t *testing.T) {
 		}
 	}
 
-	truncateCmd := TruncateJSON{"src", 10000}
+	truncateCmd := lhproto.TruncateJSON{"src", 10000}
 	client.Truncate(&truncateCmd)
 
 	select {
@@ -70,7 +71,7 @@ func TestClientServer(t *testing.T) {
 		t.FailNow()
 	}
 
-	transferCmd := TransferJSON{":10000", 1024}
+	transferCmd := lhproto.TransferJSON{":10000", 1024}
 	client.Transfer(&transferCmd)
 
 	select {
@@ -89,14 +90,14 @@ func TestClientServer(t *testing.T) {
 		t.FailNow()
 	}
 
-	acceptCmd := AcceptJSON{"src/file"}
-	acceptChan := make(chan *InternalLogEntryJSON)
-	acceptResult := make(chan *AcceptResultJSON)
+	acceptCmd := lhproto.AcceptJSON{"src/file"}
+	acceptChan := make(chan *lhproto.InternalLogEntryJSON)
+	acceptResult := make(chan *lhproto.AcceptResultJSON)
 
 	client.Accept(&acceptCmd, acceptChan, acceptResult)
 
 	for i := 0; i < testLogEntriesCount; i++ {
-		m := &InternalLogEntryJSON{1, "src", EncodingPlain, "Message", timeToTimestamp(time.Now())}
+		m := &lhproto.InternalLogEntryJSON{1, "src", EncodingPlain, "Message", timeToTimestamp(time.Now())}
 
 		acceptChan <- m
 	}
@@ -137,13 +138,13 @@ func TestClientServer(t *testing.T) {
 		t.FailNow()
 	}
 
-	queries := make(chan *LogQueryJSON)
-	result := make(chan *OutgoingLogEntryJSON)
+	queries := make(chan *lhproto.LogQueryJSON)
+	result := make(chan *lhproto.OutgoingLogEntryJSON)
 
 	client.Read(queries, result)
 
 	for i := 0; i < testLogQueriesCount; i++ {
-		queries <- new(LogQueryJSON)
+		queries <- new(lhproto.LogQueryJSON)
 	}
 
 	close(queries)
@@ -162,13 +163,13 @@ func TestClientServer(t *testing.T) {
 		t.FailNow()
 	}
 
-	queries = make(chan *LogQueryJSON)
-	resultInternal := make(chan *InternalLogEntryJSON)
+	queries = make(chan *lhproto.LogQueryJSON)
+	resultInternal := make(chan *lhproto.InternalLogEntryJSON)
 
 	client.InternalRead(queries, resultInternal)
 
 	for i := 0; i < testLogQueriesCount; i++ {
-		queries <- new(LogQueryJSON)
+		queries <- new(lhproto.LogQueryJSON)
 	}
 
 	close(queries)
@@ -200,44 +201,44 @@ func TestClientWithoutServer(t *testing.T) {
 	trace.SetTraceLevel(-1)
 	defer trace.SetTraceLevel(trace.LevelError)
 
-	client := NewLogHubClient(":9999", 1)
+	client := lhproto.NewClient(":9999", 1)
 
-	entriesToWrite := make(chan *IncomingLogEntryJSON)
+	entriesToWrite := make(chan *lhproto.IncomingLogEntryJSON)
 	client.Write(entriesToWrite)
 
 	for i := 0; i < testLogEntriesCount; i++ {
-		m := &IncomingLogEntryJSON{1, "Source", "Message"}
+		m := &lhproto.IncomingLogEntryJSON{1, "Source", "Message"}
 
 		entriesToWrite <- m
 	}
 
 	close(entriesToWrite)
 
-	queries := make(chan *LogQueryJSON)
-	result := make(chan *OutgoingLogEntryJSON)
+	queries := make(chan *lhproto.LogQueryJSON)
+	result := make(chan *lhproto.OutgoingLogEntryJSON)
 
 	client.Read(queries, result)
 
 	for i := 0; i < testLogQueriesCount; i++ {
-		queries <- new(LogQueryJSON)
+		queries <- new(lhproto.LogQueryJSON)
 	}
 
 	close(queries)
 
-	PurgeOutgoingLogEntryJSON(result)
+	lhproto.PurgeOutgoingLogEntryJSON(result)
 
-	queries = make(chan *LogQueryJSON)
-	resultInternal := make(chan *InternalLogEntryJSON)
+	queries = make(chan *lhproto.LogQueryJSON)
+	resultInternal := make(chan *lhproto.InternalLogEntryJSON)
 
 	client.InternalRead(queries, resultInternal)
 
 	for i := 0; i < testLogQueriesCount; i++ {
-		queries <- new(LogQueryJSON)
+		queries <- new(lhproto.LogQueryJSON)
 	}
 
 	close(queries)
 
-	PurgeInternalLogEntryJSON(resultInternal)
+	lhproto.PurgeInternalLogEntryJSON(resultInternal)
 
 	client.Close()
 }

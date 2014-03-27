@@ -3,11 +3,7 @@
 // The use of this source code is governed by the license
 // that can be found in the LICENSE file.
 
-package main
-
-import (
-	"encoding/base64"
-)
+package lhproto
 
 /*
 This file describes the data structures of the LogHub communication protocol.
@@ -137,8 +133,8 @@ type AcceptResultJSON struct {
 	Result bool
 }
 
-//The interface which a protocol message handler must implement.
-type MessageHandler interface {
+//The interface which a protocol handler must implement.
+type ProtocolHandler interface {
 	Write(chan *IncomingLogEntryJSON)
 	Read(chan *LogQueryJSON, chan *OutgoingLogEntryJSON)
 	InternalRead(chan *LogQueryJSON, chan *InternalLogEntryJSON)
@@ -146,68 +142,4 @@ type MessageHandler interface {
 	Transfer(*TransferJSON)
 	Accept(*AcceptJSON, chan *InternalLogEntryJSON, chan *AcceptResultJSON)
 	Close()
-}
-
-func IncomingLogEntryJSONToLogEntry(in *IncomingLogEntryJSON) *LogEntry {
-	ent := new(LogEntry)
-
-	ent.Severity = in.Sev
-	ent.Source = in.Src
-
-	ent.Message, ent.Encoding = EncodeMessage(in.Msg)
-
-	return ent
-}
-
-func LogEntryToOutgoingLogEntryJSON(in *LogEntry) *OutgoingLogEntryJSON {
-	return &OutgoingLogEntryJSON{
-		IncomingLogEntryJSON{
-			in.Severity,
-			in.Source,
-			DecodeMessage(in.Message, in.Encoding),
-		},
-		in.Timestamp,
-	}
-}
-
-func LogEntryToInternalLogEntryJSON(in *LogEntry) *InternalLogEntryJSON {
-	var msg string
-
-	if in.Encoding == EncodingDeflate {
-		msg = base64.StdEncoding.EncodeToString(in.Message)
-	} else {
-		msg = string(in.Message)
-	}
-
-	return &InternalLogEntryJSON{
-		in.Severity,
-		in.Source,
-		in.Encoding,
-		msg,
-		in.Timestamp,
-	}
-}
-
-func InternalLogEntryJSONToLogEntry(in *InternalLogEntryJSON) *LogEntry {
-	var msg []byte
-
-	if in.Enc == EncodingDeflate {
-		if m, err := base64.StdEncoding.DecodeString(in.Msg); err == nil {
-			msg = m
-		} else {
-			msg = []byte{}
-		}
-	} else {
-		msg = []byte(in.Msg)
-	}
-
-	return &LogEntry{in.Ts, in.Sev, in.Src, in.Enc, msg}
-}
-
-func LogQueryJSONToLogQuery(in *LogQueryJSON) *LogQuery {
-	return &LogQuery{in.From, in.To, in.MinSev, in.MaxSev, in.Src}
-}
-
-func LogQueryToLogQueryJSON(in *LogQuery) *LogQueryJSON {
-	return &LogQueryJSON{in.From, in.To, in.MinSeverity, in.MaxSeverity, in.Source}
 }

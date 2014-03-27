@@ -6,6 +6,7 @@
 package main
 
 import (
+	"github.com/dbratus/loghub/lhproto"
 	"github.com/dbratus/loghub/trace"
 	"net"
 	"runtime"
@@ -63,19 +64,19 @@ func NewDefaultHub() Hub {
 func (h *defaultHub) run() {
 	type logInfo struct {
 		stat       *LogStat
-		client     MessageHandler
+		client     lhproto.ProtocolHandler
 		timeout    time.Time
 		usersCount *int32
 	}
 
 	logs := make(map[string]*logInfo)
 
-	readLog := func(queries []*LogQuery, client MessageHandler, entries chan *LogEntry, usersCount *int32) {
+	readLog := func(queries []*LogQuery, client lhproto.ProtocolHandler, entries chan *LogEntry, usersCount *int32) {
 		atomic.AddInt32(usersCount, 1)
 		defer atomic.AddInt32(usersCount, -1)
 
-		queriesJSON := make(chan *LogQueryJSON)
-		results := make(chan *InternalLogEntryJSON)
+		queriesJSON := make(chan *lhproto.LogQueryJSON)
+		results := make(chan *lhproto.InternalLogEntryJSON)
 
 		client.InternalRead(queriesJSON, results)
 
@@ -125,7 +126,7 @@ func (h *defaultHub) run() {
 		} else {
 			logs[addr] = &logInfo{
 				cmd.stat,
-				NewLogHubClient(addr, maxConnectionsPerClient),
+				lhproto.NewClient(addr, maxConnectionsPerClient),
 				time.Now().Add(logCloseTimeout),
 				new(int32),
 			}
@@ -155,7 +156,7 @@ func (h *defaultHub) run() {
 				atomic.AddInt32(log.usersCount, 1)
 				defer atomic.AddInt32(log.usersCount, -1)
 
-				log.client.Truncate(&TruncateJSON{cmd.source, cmd.limit})
+				log.client.Truncate(&lhproto.TruncateJSON{cmd.source, cmd.limit})
 			}(log)
 		}
 	}

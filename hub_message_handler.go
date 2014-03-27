@@ -5,19 +5,23 @@
 
 package main
 
-type hubMessageHandler struct {
+import (
+	"github.com/dbratus/loghub/lhproto"
+)
+
+type hubProtocolHandler struct {
 	hub Hub
 }
 
-func NewHubMessageHandler(hub Hub) MessageHandler {
-	return &hubMessageHandler{hub}
+func NewHubProtocolHandler(hub Hub) lhproto.ProtocolHandler {
+	return &hubProtocolHandler{hub}
 }
 
-func (mh *hubMessageHandler) Write(entries chan *IncomingLogEntryJSON) {
-	PurgeIncomingLogEntryJSON(entries)
+func (mh *hubProtocolHandler) Write(entries chan *lhproto.IncomingLogEntryJSON) {
+	lhproto.PurgeIncomingLogEntryJSON(entries)
 }
 
-func (mh *hubMessageHandler) query(queriesJSON chan *LogQueryJSON) chan *LogEntry {
+func (mh *hubProtocolHandler) query(queriesJSON chan *lhproto.LogQueryJSON) chan *LogEntry {
 	queries := make([]*LogQuery, 0, 10)
 
 	for qJSON := range queriesJSON {
@@ -35,7 +39,7 @@ func (mh *hubMessageHandler) query(queriesJSON chan *LogQueryJSON) chan *LogEntr
 	}
 }
 
-func (mh *hubMessageHandler) Read(queries chan *LogQueryJSON, resultJSON chan *OutgoingLogEntryJSON) {
+func (mh *hubProtocolHandler) Read(queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.OutgoingLogEntryJSON) {
 	result := mh.query(queries)
 
 	if result != nil {
@@ -47,7 +51,7 @@ func (mh *hubMessageHandler) Read(queries chan *LogQueryJSON, resultJSON chan *O
 	close(resultJSON)
 }
 
-func (mh *hubMessageHandler) InternalRead(queries chan *LogQueryJSON, resultJSON chan *InternalLogEntryJSON) {
+func (mh *hubProtocolHandler) InternalRead(queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.InternalLogEntryJSON) {
 	result := mh.query(queries)
 
 	if result != nil {
@@ -59,18 +63,18 @@ func (mh *hubMessageHandler) InternalRead(queries chan *LogQueryJSON, resultJSON
 	close(resultJSON)
 }
 
-func (mh *hubMessageHandler) Truncate(cmd *TruncateJSON) {
+func (mh *hubProtocolHandler) Truncate(cmd *lhproto.TruncateJSON) {
 	mh.hub.Truncate(cmd.Src, cmd.Lim)
 }
 
-func (mh *hubMessageHandler) Transfer(cmd *TransferJSON) {
+func (mh *hubProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
 }
 
-func (mh *hubMessageHandler) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJSON, result chan *AcceptResultJSON) {
-	PurgeInternalLogEntryJSON(entries)
-	result <- &AcceptResultJSON{false}
+func (mh *hubProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhproto.InternalLogEntryJSON, result chan *lhproto.AcceptResultJSON) {
+	lhproto.PurgeInternalLogEntryJSON(entries)
+	result <- &lhproto.AcceptResultJSON{false}
 }
 
-func (mh *hubMessageHandler) Close() {
+func (mh *hubProtocolHandler) Close() {
 	mh.hub.Close()
 }

@@ -12,21 +12,21 @@ import (
 	"time"
 )
 
-func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testMessageHandler)) {
+func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testProtocolHandler)) {
 	hub := NewDefaultHub()
 	defer hub.Close()
 
 	closeFuncs := make([]func(), 0, logsCount)
-	messageHandlers := make([]*testMessageHandler, 0, logsCount)
+	protocolHandlers := make([]*testProtocolHandler, 0, logsCount)
 
 	for i := 0; i < logsCount; i++ {
 		port := 10000 + i
 		serverAddress := ":" + strconv.Itoa(port)
-		messageHandler := newTestMessageHandler()
+		protocolHandler := newTestProtocolHandler()
 
-		messageHandlers = append(messageHandlers, messageHandler)
+		protocolHandlers = append(protocolHandlers, protocolHandler)
 
-		if c, err := startServer(serverAddress, messageHandler); err != nil {
+		if c, err := startServer(serverAddress, protocolHandler); err != nil {
 			t.Errorf("Failed to start LogHub server", err.Error())
 			t.FailNow()
 		} else {
@@ -42,13 +42,13 @@ func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testMessageHandle
 		}
 	}()
 
-	test(hub, messageHandlers)
+	test(hub, protocolHandlers)
 }
 
 func TestHubSetStatRead(t *testing.T) {
 	logsCount := 10
 
-	runHubTest(t, logsCount, func(hub Hub, messageHandlers []*testMessageHandler) {
+	runHubTest(t, logsCount, func(hub Hub, protocolHandlers []*testProtocolHandler) {
 		entries := make(chan *LogEntry)
 		var queries = []*LogQuery{&LogQuery{}}
 
@@ -69,14 +69,14 @@ func TestHubSetStatRead(t *testing.T) {
 func TestHubTruncate(t *testing.T) {
 	logsCount := 10
 
-	runHubTest(t, logsCount, func(hub Hub, messageHandlers []*testMessageHandler) {
+	runHubTest(t, logsCount, func(hub Hub, protocolHandlers []*testProtocolHandler) {
 		hub.Truncate("hub", 10000)
 
 		cntChan := make(chan bool)
 		cnt := 0
-		for i := 0; i < len(messageHandlers); i++ {
+		for i := 0; i < len(protocolHandlers); i++ {
 			go func(i int) {
-				<-messageHandlers[i].truncations
+				<-protocolHandlers[i].truncations
 				cntChan <- true
 			}(i)
 		}

@@ -67,23 +67,3 @@ func PurgeLog(log chan *LogEntry) {
 	for _ = range log {
 	}
 }
-
-func PurgeIncomingLogEntryJSON(entries chan *IncomingLogEntryJSON) {
-	for _ = range entries {
-	}
-}
-
-func PurgeLogQueryJSON(queries chan *LogQueryJSON) {
-	for _ = range queries {
-	}
-}
-
-func PurgeOutgoingLogEntryJSON(entries chan *OutgoingLogEntryJSON) {
-	for _ = range entries {
-	}
-}
-
-func PurgeInternalLogEntryJSON(entries chan *InternalLogEntryJSON) {
-	for _ = range entries {
-	}
-}

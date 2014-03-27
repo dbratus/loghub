@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/dbratus/loghub/lhproto"
 	"net"
 	"os"
 	"os/signal"
@@ -98,7 +99,7 @@ func logCommand(args []string) {
 
 	var stopServer func()
 
-	if s, err := startServer(*address, NewLogMessageHandler(logManager)); err != nil {
+	if s, err := startServer(*address, NewLogProtocolHandler(logManager)); err != nil {
 		println("Failed to start the server:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -132,7 +133,7 @@ func hubCommand(args []string) {
 
 	var stopServer func()
 
-	if s, err := startServer(*address, NewHubMessageHandler(hub)); err != nil {
+	if s, err := startServer(*address, NewHubProtocolHandler(hub)); err != nil {
 		println("Failed to start the server:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -190,36 +191,36 @@ func getCommand(args []string) {
 		to = timeToTimestamp(base.Add(*rng))
 	}
 
-	client := NewLogHubClient(*addr, 1)
+	client := lhproto.NewClient(*addr, 1)
 	defer client.Close()
 
-	queries := make(chan *LogQueryJSON)
-	results := make(chan *OutgoingLogEntryJSON)
+	queries := make(chan *lhproto.LogQueryJSON)
+	results := make(chan *lhproto.OutgoingLogEntryJSON)
 
 	client.Read(queries, results)
 
 	if *src == "" {
-		queries <- &LogQueryJSON{from, to, *minSev, *maxSev, *src}
+		queries <- &lhproto.LogQueryJSON{from, to, *minSev, *maxSev, *src}
 	} else {
 		for _, s := range strings.Split(*src, ",") {
-			queries <- &LogQueryJSON{from, to, *minSev, *maxSev, strings.Trim(s, " ")}
+			queries <- &lhproto.LogQueryJSON{from, to, *minSev, *maxSev, strings.Trim(s, " ")}
 		}
 	}
 
 	close(queries)
 
-	formatText := func(ent *OutgoingLogEntryJSON) {
+	formatText := func(ent *lhproto.OutgoingLogEntryJSON) {
 		fmt.Printf(*format, timestampToTime(ent.Ts).Format(*tsfmt), ent.Src, ent.Sev, ent.Msg)
 		fmt.Println()
 	}
 
-	formatJSON := func(ent *OutgoingLogEntryJSON) {
+	formatJSON := func(ent *lhproto.OutgoingLogEntryJSON) {
 		if bytes, err := json.Marshal(ent); err == nil {
 			fmt.Println(string(bytes))
 		}
 	}
 
-	var formatEntry func(*OutgoingLogEntryJSON)
+	var formatEntry func(*lhproto.OutgoingLogEntryJSON)
 
 	if *format == "JSON" {
 		formatEntry = formatJSON
@@ -244,8 +245,8 @@ func putCommand(args []string) {
 	}
 
 	input := bufio.NewReader(os.Stdin)
-	client := NewLogHubClient(*addr, 1)
-	entChan := make(chan *IncomingLogEntryJSON)
+	client := lhproto.NewClient(*addr, 1)
+	entChan := make(chan *lhproto.IncomingLogEntryJSON)
 
 	client.Write(entChan)
 
@@ -260,7 +261,7 @@ func putCommand(args []string) {
 				break
 			}
 
-			ent := new(IncomingLogEntryJSON)
+			ent := new(lhproto.IncomingLogEntryJSON)
 
 			if err = json.Unmarshal(line, ent); err == nil && ent.IsValid() {
 				entChan <- ent
@@ -287,15 +288,15 @@ func truncateCommand(args []string) {
 		os.Exit(1)
 	}
 
-	client := NewLogHubClient(*addr, 1)
+	client := lhproto.NewClient(*addr, 1)
 	defer client.Close()
 
 	if *src == "" {
-		client.Truncate(&TruncateJSON{*src, timeToTimestamp(time.Now().Add(*lim))})
+		client.Truncate(&lhproto.TruncateJSON{*src, timeToTimestamp(time.Now().Add(*lim))})
 	} else {
 		for _, s := range strings.Split(*src, ",") {
 			client.Truncate(
-				&TruncateJSON{
+				&lhproto.TruncateJSON{
 					strings.Trim(s, " "),
 					timeToTimestamp(time.Now().Add(*lim)),
 				},

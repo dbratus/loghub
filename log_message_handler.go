@@ -5,21 +5,25 @@
 
 package main
 
-type logMessageHandler struct {
+import (
+	"github.com/dbratus/loghub/lhproto"
+)
+
+type logProtocolHandler struct {
 	logManager LogManager
 }
 
-func NewLogMessageHandler(logManager LogManager) MessageHandler {
-	return &logMessageHandler{logManager}
+func NewLogProtocolHandler(logManager LogManager) lhproto.ProtocolHandler {
+	return &logProtocolHandler{logManager}
 }
 
-func (mh *logMessageHandler) Write(entries chan *IncomingLogEntryJSON) {
+func (mh *logProtocolHandler) Write(entries chan *lhproto.IncomingLogEntryJSON) {
 	for ent := range entries {
 		mh.logManager.WriteLog(IncomingLogEntryJSONToLogEntry(ent))
 	}
 }
 
-func (mh *logMessageHandler) query(queries chan *LogQueryJSON) chan *LogEntry {
+func (mh *logProtocolHandler) query(queries chan *lhproto.LogQueryJSON) chan *LogEntry {
 	var results chan *LogEntry = nil
 
 	for qJSON := range queries {
@@ -42,7 +46,7 @@ func (mh *logMessageHandler) query(queries chan *LogQueryJSON) chan *LogEntry {
 	return results
 }
 
-func (mh *logMessageHandler) Read(queries chan *LogQueryJSON, resultJSON chan *OutgoingLogEntryJSON) {
+func (mh *logProtocolHandler) Read(queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.OutgoingLogEntryJSON) {
 	result := mh.query(queries)
 
 	if result != nil {
@@ -54,7 +58,7 @@ func (mh *logMessageHandler) Read(queries chan *LogQueryJSON, resultJSON chan *O
 	close(resultJSON)
 }
 
-func (mh *logMessageHandler) InternalRead(queries chan *LogQueryJSON, resultJSON chan *InternalLogEntryJSON) {
+func (mh *logProtocolHandler) InternalRead(queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.InternalLogEntryJSON) {
 	result := mh.query(queries)
 
 	if result != nil {
@@ -66,23 +70,23 @@ func (mh *logMessageHandler) InternalRead(queries chan *LogQueryJSON, resultJSON
 	close(resultJSON)
 }
 
-func (mh *logMessageHandler) Truncate(cmd *TruncateJSON) {
+func (mh *logProtocolHandler) Truncate(cmd *lhproto.TruncateJSON) {
 	mh.logManager.Truncate(cmd.Src, cmd.Lim)
 }
 
-func (mh *logMessageHandler) Transfer(cmd *TransferJSON) {
+func (mh *logProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
 	lim := cmd.Lim
-	cli := NewLogHubClient(cmd.Addr, 1)
+	cli := lhproto.NewClient(cmd.Addr, 1)
 	defer cli.Close()
 
 	for {
 		entries := make(chan *LogEntry)
 
 		if chunkId, chunkSize, found := mh.logManager.GetTransferChunk(lim, entries); found {
-			acceptResult := make(chan *AcceptResultJSON)
-			acceptEntries := make(chan *InternalLogEntryJSON)
+			acceptResult := make(chan *lhproto.AcceptResultJSON)
+			acceptEntries := make(chan *lhproto.InternalLogEntryJSON)
 
-			cli.Accept(&AcceptJSON{chunkId}, acceptEntries, acceptResult)
+			cli.Accept(&lhproto.AcceptJSON{chunkId}, acceptEntries, acceptResult)
 
 			for ent := range entries {
 				acceptEntries <- LogEntryToInternalLogEntryJSON(ent)
@@ -103,7 +107,7 @@ func (mh *logMessageHandler) Transfer(cmd *TransferJSON) {
 	}
 }
 
-func (mh *logMessageHandler) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJSON, result chan *AcceptResultJSON) {
+func (mh *logProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhproto.InternalLogEntryJSON, result chan *lhproto.AcceptResultJSON) {
 	entriesToAccept := make(chan *LogEntry)
 
 	ack := mh.logManager.AcceptTransferChunk(cmd.Chunk, entriesToAccept)
@@ -112,9 +116,9 @@ func (mh *logMessageHandler) Accept(cmd *AcceptJSON, entries chan *InternalLogEn
 		entriesToAccept <- InternalLogEntryJSONToLogEntry(ent)
 	}
 
-	result <- &AcceptResultJSON{<-ack}
+	result <- &lhproto.AcceptResultJSON{<-ack}
 }
 
-func (mh *logMessageHandler) Close() {
+func (mh *logProtocolHandler) Close() {
 	mh.logManager.Close()
 }

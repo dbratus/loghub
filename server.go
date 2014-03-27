@@ -6,10 +6,12 @@
 package main
 
 import (
+	"github.com/dbratus/loghub/jstream"
+	"github.com/dbratus/loghub/lhproto"
 	"net"
 )
 
-func startServer(address string, handler MessageHandler) (func(), error) {
+func startServer(address string, handler lhproto.ProtocolHandler) (func(), error) {
 	if listener, err := net.Listen("tcp", address); err == nil {
 		go func() {
 			for {
@@ -31,12 +33,12 @@ func startServer(address string, handler MessageHandler) (func(), error) {
 	}
 }
 
-func handleConnection(conn net.Conn, handler MessageHandler) {
-	reader := NewJSONStreamReader(conn)
-	writer := NewJSONStreamWriter(conn)
+func handleConnection(conn net.Conn, handler lhproto.ProtocolHandler) {
+	reader := jstream.NewReader(conn)
+	writer := jstream.NewWriter(conn)
 
 	for {
-		var header MessageHeaderJSON
+		var header lhproto.MessageHeaderJSON
 
 		if err := reader.ReadJSON(&header); err != nil {
 			conn.Close()
@@ -44,18 +46,18 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 		}
 
 		switch header.Action {
-		case ActionWrite:
-			entChan := make(chan *IncomingLogEntryJSON)
+		case lhproto.ActionWrite:
+			entChan := make(chan *lhproto.IncomingLogEntryJSON)
 
 			go handler.Write(entChan)
 
 			for {
-				ent := new(IncomingLogEntryJSON)
+				ent := new(lhproto.IncomingLogEntryJSON)
 
 				if err := reader.ReadJSON(ent); err != nil {
 					close(entChan)
 
-					if err != ErrStreamDelimiter {
+					if err != jstream.ErrStreamDelimiter {
 						conn.Close()
 						return
 					}
@@ -65,9 +67,9 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 
 				entChan <- ent
 			}
-		case ActionRead:
-			qChan := make(chan *LogQueryJSON)
-			entChan := make(chan *OutgoingLogEntryJSON)
+		case lhproto.ActionRead:
+			qChan := make(chan *lhproto.LogQueryJSON)
+			entChan := make(chan *lhproto.OutgoingLogEntryJSON)
 
 			go handler.Read(qChan, entChan)
 
@@ -91,9 +93,9 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 				writer.WriteDelimiter()
 			}
 
-		case ActionInternalRead:
-			qChan := make(chan *LogQueryJSON)
-			entChan := make(chan *InternalLogEntryJSON)
+		case lhproto.ActionInternalRead:
+			qChan := make(chan *lhproto.LogQueryJSON)
+			entChan := make(chan *lhproto.InternalLogEntryJSON)
 
 			go handler.InternalRead(qChan, entChan)
 
@@ -117,8 +119,8 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 				writer.WriteDelimiter()
 			}
 
-		case ActionTruncate:
-			var cmd TruncateJSON
+		case lhproto.ActionTruncate:
+			var cmd lhproto.TruncateJSON
 
 			if err := reader.ReadJSON(&cmd); err != nil {
 				conn.Close()
@@ -127,8 +129,8 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 
 			go handler.Truncate(&cmd)
 
-		case ActionTransfer:
-			var cmd TransferJSON
+		case lhproto.ActionTransfer:
+			var cmd lhproto.TransferJSON
 
 			if err := reader.ReadJSON(&cmd); err != nil {
 				conn.Close()
@@ -137,26 +139,26 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 
 			go handler.Transfer(&cmd)
 
-		case ActionAccept:
-			var cmd AcceptJSON
+		case lhproto.ActionAccept:
+			var cmd lhproto.AcceptJSON
 
 			if err := reader.ReadJSON(&cmd); err != nil {
 				conn.Close()
 				return
 			}
 
-			entChan := make(chan *InternalLogEntryJSON)
-			resultChan := make(chan *AcceptResultJSON)
+			entChan := make(chan *lhproto.InternalLogEntryJSON)
+			resultChan := make(chan *lhproto.AcceptResultJSON)
 
 			go handler.Accept(&cmd, entChan, resultChan)
 
 			for {
-				ent := new(InternalLogEntryJSON)
+				ent := new(lhproto.InternalLogEntryJSON)
 
 				if err := reader.ReadJSON(ent); err != nil {
 					close(entChan)
 
-					if err != ErrStreamDelimiter {
+					if err != jstream.ErrStreamDelimiter {
 						conn.Close()
 						return
 					}
@@ -177,14 +179,14 @@ func handleConnection(conn net.Conn, handler MessageHandler) {
 	}
 }
 
-func readLogQueryJSONChannel(reader JSONStreamReader, handler MessageHandler, qChan chan *LogQueryJSON) bool {
+func readLogQueryJSONChannel(reader jstream.Reader, handler lhproto.ProtocolHandler, qChan chan *lhproto.LogQueryJSON) bool {
 	for {
-		q := new(LogQueryJSON)
+		q := new(lhproto.LogQueryJSON)
 
 		if err := reader.ReadJSON(q); err != nil {
 			close(qChan)
 
-			if err != ErrStreamDelimiter {
+			if err != jstream.ErrStreamDelimiter {
 				return false
 			}
 

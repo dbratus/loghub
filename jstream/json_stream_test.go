@@ -3,7 +3,7 @@
 // The use of this source code is governed by the license
 // that can be found in the LICENSE file.
 
-package main
+package jstream
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 
 func TestWriteReadJSONStream(t *testing.T) {
 	var data bytes.Buffer
-	writer := NewJSONStreamWriter(&data)
+	writer := NewWriter(&data)
 
 	header := MessageHeaderJSON{ActionWrite}
 	entry := IncomingLogEntryJSON{1, "source", "Message"}
@@ -34,7 +34,7 @@ func TestWriteReadJSONStream(t *testing.T) {
 		t.FailNow()
 	}
 
-	reader := NewJSONStreamReader(&data)
+	reader := NewReader(&data)
 
 	if err := reader.ReadJSON(&header); err != nil {
 		t.Errorf("Failed to read JSON %s.", err.Error())
