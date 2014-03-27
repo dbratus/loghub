@@ -255,7 +255,7 @@ func TestTransfer(t *testing.T) {
 	entries := make(chan *LogEntry)
 	gb := int64(1024 * 1024 * 1024)
 
-	if chunkId, found := logManager.GetTransferChunk(gb, entries); found {
+	if chunkId, chunkSize, found := logManager.GetTransferChunk(gb, entries); found {
 		cnt := 0
 		initialLogSize := logManager.Size()
 		initialAltLogSize := logManagerAlt.Size()
@@ -289,6 +289,11 @@ func TestTransfer(t *testing.T) {
 
 		if sz := logManagerAlt.Size(); sz <= initialAltLogSize {
 			t.Errorf("Destination log must grow after transfer chunk deletion. Was %d, became %d.", initialAltLogSize, sz)
+			t.FailNow()
+		}
+
+		if chunkSize <= 0 {
+			t.Errorf("Invalid chunk size.")
 			t.FailNow()
 		}
 	} else {

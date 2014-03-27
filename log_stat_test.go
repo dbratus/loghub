@@ -31,8 +31,8 @@ func (mg *logManagerForStatTest) Size() int64 {
 	return mg.size
 }
 
-func (mg *logManagerForStatTest) GetTransferChunk(maxSize int64, entries chan *LogEntry) (id string, found bool) {
-	return "", false
+func (mg *logManagerForStatTest) GetTransferChunk(maxSize int64, entries chan *LogEntry) (id string, size int64, found bool) {
+	return "", 0, false
 }
 
 func (mg *logManagerForStatTest) AcceptTransferChunk(id string, entries chan *LogEntry) chan bool {

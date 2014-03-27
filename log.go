@@ -65,7 +65,7 @@ type LogManager interface {
 
 	Truncate(source string, limit int64)
 
-	GetTransferChunk(maxSize int64, entries chan *LogEntry) (id string, found bool)
+	GetTransferChunk(maxSize int64, entries chan *LogEntry) (id string, size int64, found bool)
 	AcceptTransferChunk(id string, entries chan *LogEntry) chan bool
 	DeleteTransferChunk(id string)
 }

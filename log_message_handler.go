@@ -71,11 +71,48 @@ func (mh *logMessageHandler) Truncate(cmd *TruncateJSON) {
 }
 
 func (mh *logMessageHandler) Transfer(cmd *TransferJSON) {
-	//TODO: Implement.
+	lim := cmd.Lim
+	cli := NewLogHubClient(cmd.Addr, 1)
+	defer cli.Close()
+
+	for {
+		entries := make(chan *LogEntry)
+
+		if chunkId, chunkSize, found := mh.logManager.GetTransferChunk(lim, entries); found {
+			acceptResult := make(chan *AcceptResultJSON)
+			acceptEntries := make(chan *InternalLogEntryJSON)
+
+			cli.Accept(&AcceptJSON{chunkId}, acceptEntries, acceptResult)
+
+			for ent := range entries {
+				acceptEntries <- LogEntryToInternalLogEntryJSON(ent)
+			}
+
+			if res := <-acceptResult; res.Result {
+				mh.logManager.DeleteTransferChunk(chunkId)
+
+				lim -= chunkSize
+
+				if lim <= 0 {
+					break
+				}
+			} else {
+				break
+			}
+		}
+	}
 }
 
 func (mh *logMessageHandler) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJSON, result chan *AcceptResultJSON) {
-	//TODO: Implement.
+	entriesToAccept := make(chan *LogEntry)
+
+	ack := mh.logManager.AcceptTransferChunk(cmd.Chunk, entriesToAccept)
+
+	for ent := range entries {
+		entriesToAccept <- InternalLogEntryJSONToLogEntry(ent)
+	}
+
+	result <- &AcceptResultJSON{<-ack}
 }
 
 func (mh *logMessageHandler) Close() {

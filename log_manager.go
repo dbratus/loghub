@@ -37,9 +37,14 @@ type truncateLogCmd struct {
 }
 
 type getTransferChunkCmd struct {
-	maxSize int64
-	entries chan *LogEntry
-	id      chan string
+	maxSize   int64
+	entries   chan *LogEntry
+	chunkChan chan logChunkInfo
+}
+
+type logChunkInfo struct {
+	id   string
+	size int64
 }
 
 type acceptTransferChunkCmd struct {
@@ -104,10 +109,14 @@ func (mg *defaultLogManager) Truncate(source string, limit int64) {
 	mg.truncateChan <- truncateLogCmd{source, limit}
 }
 
-func (mg *defaultLogManager) GetTransferChunk(maxSize int64, entries chan *LogEntry) (id string, found bool) {
-	idChan := make(chan string)
-	mg.getTransferChunkChan <- getTransferChunkCmd{maxSize, entries, idChan}
-	id, found = <-idChan
+func (mg *defaultLogManager) GetTransferChunk(maxSize int64, entries chan *LogEntry) (id string, size int64, found bool) {
+	chunkChan := make(chan logChunkInfo)
+	mg.getTransferChunkChan <- getTransferChunkCmd{maxSize, entries, chunkChan}
+	chunk, found := <-chunkChan
+
+	id = chunk.id
+	size = chunk.size
+
 	return
 }
 
@@ -611,8 +620,8 @@ func (mg *defaultLogManager) run() {
 					lck := srcInfo.lock.Lock(opCnt, rangeStart, rangeEnd, true)
 
 					if logFile, err := getLogFile(chunkId, false, true); err == nil {
-						cmd.id <- chunkId
-						close(cmd.id)
+						cmd.chunkChan <- logChunkInfo{chunkId, stat.Size()}
+						close(cmd.chunkChan)
 
 						results := make(chan *LogEntry)
 						logFile.ReadLog(&LogQuery{rangeStart, rangeEnd, minSeverity, maxSeverity, ""}, results)
@@ -631,7 +640,7 @@ func (mg *defaultLogManager) run() {
 		}
 
 		close(cmd.entries)
-		close(cmd.id)
+		close(cmd.chunkChan)
 	}
 
 	onAcceptTransferChunk := func(cmd acceptTransferChunkCmd) {
@@ -838,7 +847,7 @@ func (mg *defaultLogManager) run() {
 
 			for cmd := range mg.getTransferChunkChan {
 				close(cmd.entries)
-				close(cmd.id)
+				close(cmd.chunkChan)
 			}
 
 			for cmd := range mg.acceptTransferChunkChan {
