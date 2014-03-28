@@ -71,7 +71,7 @@ func TestClientServer(t *testing.T) {
 		t.FailNow()
 	}
 
-	transferCmd := lhproto.TransferJSON{":10000", 1024}
+	transferCmd := lhproto.TransferJSON{1, ":10000", 1024}
 	client.Transfer(&transferCmd)
 
 	select {
@@ -90,7 +90,7 @@ func TestClientServer(t *testing.T) {
 		t.FailNow()
 	}
 
-	acceptCmd := lhproto.AcceptJSON{"src/file"}
+	acceptCmd := lhproto.AcceptJSON{"src/file", 1}
 	acceptChan := make(chan *lhproto.InternalLogEntryJSON)
 	acceptResult := make(chan *lhproto.AcceptResultJSON)
 

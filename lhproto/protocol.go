@@ -119,13 +119,15 @@ type TruncateJSON struct {
 
 //The transfer command.
 type TransferJSON struct {
+	Id   int64
 	Addr string
 	Lim  int64
 }
 
 //The accept command.
 type AcceptJSON struct {
-	Chunk string
+	Chunk      string
+	TransferId int64
 }
 
 //The result of 'accept' action.

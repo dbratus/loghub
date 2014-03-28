@@ -10,6 +10,7 @@ import (
 	"encoding/gob"
 	"github.com/dbratus/loghub/trace"
 	"net"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,14 +19,7 @@ var (
 	logStatReceiverTrace = trace.New("LogStatReceiver")
 )
 
-type LogStat struct {
-	Timestamp       int64
-	Size            int64
-	ResistanceLevel int64
-	Port            int
-}
-
-func startLogStatSender(hubAddr string, log LogManager, port int, resistanceLevel int64, sendInterval time.Duration) (func(), error) {
+func startLogStatSender(hubAddr string, log LogManager, port int, lim int64, lastTransferId *int64, sendInterval time.Duration) (func(), error) {
 	closeChan := make(chan chan bool)
 
 	var hubAddrUdp *net.UDPAddr
@@ -51,8 +45,9 @@ func startLogStatSender(hubAddr string, log LogManager, port int, resistanceLeve
 			stat := &LogStat{
 				timeToTimestamp(time.Now()),
 				log.Size(),
-				resistanceLevel,
+				lim,
 				port,
+				atomic.LoadInt64(lastTransferId),
 			}
 			encoder := gob.NewEncoder(msgBuf)
 

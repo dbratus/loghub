@@ -33,7 +33,7 @@ func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testProtocolHandl
 			closeFuncs = append(closeFuncs, c)
 		}
 
-		hub.SetLogStat(net.IPv4(127, 0, 0, 1), &LogStat{timeToTimestamp(time.Now()), 0, 0, port})
+		hub.SetLogStat(net.IPv4(127, 0, 0, 1), &LogStat{timeToTimestamp(time.Now()), 0, 0, port, 1})
 	}
 
 	defer func() {

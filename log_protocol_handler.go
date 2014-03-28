@@ -7,14 +7,16 @@ package main
 
 import (
 	"github.com/dbratus/loghub/lhproto"
+	"sync/atomic"
 )
 
 type logProtocolHandler struct {
-	logManager LogManager
+	logManager     LogManager
+	lastTransferId *int64
 }
 
-func NewLogProtocolHandler(logManager LogManager) lhproto.ProtocolHandler {
-	return &logProtocolHandler{logManager}
+func NewLogProtocolHandler(logManager LogManager, lastTransferId *int64) lhproto.ProtocolHandler {
+	return &logProtocolHandler{logManager, lastTransferId}
 }
 
 func (mh *logProtocolHandler) Write(entries chan *lhproto.IncomingLogEntryJSON) {
@@ -86,7 +88,7 @@ func (mh *logProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
 			acceptResult := make(chan *lhproto.AcceptResultJSON)
 			acceptEntries := make(chan *lhproto.InternalLogEntryJSON)
 
-			cli.Accept(&lhproto.AcceptJSON{chunkId}, acceptEntries, acceptResult)
+			cli.Accept(&lhproto.AcceptJSON{chunkId, cmd.Id}, acceptEntries, acceptResult)
 
 			for ent := range entries {
 				acceptEntries <- LogEntryToInternalLogEntryJSON(ent)
@@ -105,6 +107,8 @@ func (mh *logProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
 			}
 		}
 	}
+
+	atomic.StoreInt64(mh.lastTransferId, cmd.Id)
 }
 
 func (mh *logProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhproto.InternalLogEntryJSON, result chan *lhproto.AcceptResultJSON) {
@@ -117,6 +121,7 @@ func (mh *logProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhpr
 	}
 
 	result <- &lhproto.AcceptResultJSON{<-ack}
+	atomic.StoreInt64(mh.lastTransferId, cmd.TransferId)
 }
 
 func (mh *logProtocolHandler) Close() {

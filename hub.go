@@ -6,6 +6,7 @@
 package main
 
 import (
+	"github.com/dbratus/loghub/balancer"
 	"github.com/dbratus/loghub/lhproto"
 	"github.com/dbratus/loghub/trace"
 	"net"
@@ -21,6 +22,7 @@ const (
 	maxConnectionsPerClient = 10
 	logCloseTimeout         = time.Minute * 30
 	logTimeoutsCheckInteval = time.Second * 10
+	rebalancingInterval     = time.Second
 )
 
 type Hub interface {
@@ -63,16 +65,17 @@ func NewDefaultHub() Hub {
 
 func (h *defaultHub) run() {
 	type logInfo struct {
-		stat       *LogStat
-		client     lhproto.ProtocolHandler
-		timeout    time.Time
-		usersCount *int32
+		stat           *LogStat
+		client         lhproto.ProtocolHandler
+		timeout        time.Time
+		usersCount     *int32
+		lastTransferId int64
 	}
 
 	logs := make(map[string]*logInfo)
+	logBalancer := balancer.New()
 
 	readLog := func(queries []*LogQuery, client lhproto.ProtocolHandler, entries chan *LogEntry, usersCount *int32) {
-		atomic.AddInt32(usersCount, 1)
 		defer atomic.AddInt32(usersCount, -1)
 
 		queriesJSON := make(chan *lhproto.LogQueryJSON)
@@ -99,6 +102,7 @@ func (h *defaultHub) run() {
 		for _, log := range logs {
 			entries := make(chan *LogEntry)
 
+			atomic.AddInt32(log.usersCount, 1)
 			go readLog(cmd.queries, log.client, entries, log.usersCount)
 
 			if results == nil {
@@ -116,12 +120,19 @@ func (h *defaultHub) run() {
 	onSetLogStat := func(cmd setLogStatCmd) {
 		addr := cmd.addr.String() + ":" + strconv.Itoa(cmd.stat.Port)
 
-		hubTrace.Debugf("Got stat from %s: SZ=%d, RL=%d.", addr, cmd.stat.Size, cmd.stat.ResistanceLevel)
+		hubTrace.Debugf("Got stat from %s: SZ=%d, RL=%d, TRID=%d.", addr, cmd.stat.Size, cmd.stat.Limit, cmd.stat.LastTransferId)
 
 		if log, found := logs[addr]; found {
 			if cmd.stat.Timestamp > log.stat.Timestamp {
 				log.stat = cmd.stat
 				log.timeout = time.Now().Add(logCloseTimeout)
+
+				logBalancer.UpdateHost(addr, cmd.stat.Size, cmd.stat.Limit)
+
+				if log.lastTransferId != cmd.stat.LastTransferId {
+					log.lastTransferId = cmd.stat.LastTransferId
+					logBalancer.TransferComplete(addr)
+				}
 			}
 		} else {
 			logs[addr] = &logInfo{
@@ -129,7 +140,10 @@ func (h *defaultHub) run() {
 				lhproto.NewClient(addr, maxConnectionsPerClient),
 				time.Now().Add(logCloseTimeout),
 				new(int32),
+				cmd.stat.LastTransferId,
 			}
+
+			logBalancer.UpdateHost(addr, cmd.stat.Size, cmd.stat.Limit)
 		}
 	}
 
@@ -152,12 +166,27 @@ func (h *defaultHub) run() {
 
 	onTruncate := func(cmd truncateLogCmd) {
 		for _, log := range logs {
+			atomic.AddInt32(log.usersCount, 1)
+
 			go func(log *logInfo) {
-				atomic.AddInt32(log.usersCount, 1)
 				defer atomic.AddInt32(log.usersCount, -1)
 
 				log.client.Truncate(&lhproto.TruncateJSON{cmd.source, cmd.limit})
 			}(log)
+		}
+	}
+
+	onRebalance := func() {
+		for _, transfer := range logBalancer.MakeTransfers() {
+			if log, found := logs[transfer.From]; found {
+				atomic.AddInt32(log.usersCount, 1)
+
+				go func(log *logInfo, transfer *balancer.Transfer) {
+					defer atomic.AddInt32(log.usersCount, -1)
+
+					log.client.Transfer(&lhproto.TransferJSON{transfer.Id, transfer.To, transfer.Amount})
+				}(log, transfer)
+			}
 		}
 	}
 
@@ -180,6 +209,9 @@ func (h *defaultHub) run() {
 
 		case <-time.After(logTimeoutsCheckInteval):
 			onCheckTimeouts()
+
+		case <-time.After(rebalancingInterval):
+			onRebalance()
 
 		case ack := <-h.closeChan:
 			for cmd := range h.readChan {

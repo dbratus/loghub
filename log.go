@@ -40,6 +40,14 @@ type LogQuery struct {
 	Source      string
 }
 
+type LogStat struct {
+	Timestamp      int64
+	Size           int64
+	Limit          int64
+	Port           int
+	LastTransferId int64
+}
+
 type LogWriter interface {
 	WriteLog(*LogEntry)
 }

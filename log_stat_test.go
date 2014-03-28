@@ -63,9 +63,10 @@ func TestLogStatSenderReceiver(t *testing.T) {
 	logManager := &logManagerForStatTest{1000}
 
 	senderPort := 9999
-	resistanceLevel := int64(20000)
+	lim := int64(20000)
+	lastTransferId := new(int64)
 
-	if cl, err := startLogStatSender(":10000", logManager, senderPort, resistanceLevel, time.Second); err != nil {
+	if cl, err := startLogStatSender(":10000", logManager, senderPort, lim, lastTransferId, time.Second); err != nil {
 		t.Errorf("Failed to start LogStat sender: %s.", err.Error())
 		t.FailNow()
 	} else {
@@ -90,8 +91,8 @@ func TestLogStatSenderReceiver(t *testing.T) {
 			t.Errorf("Wrong LogStat port. Expected %d, got %d.", senderPort, stat.Port)
 		}
 
-		if stat.ResistanceLevel != resistanceLevel {
-			t.Errorf("Wrong LogStat resistence level. Expected %d, got %d.", resistanceLevel, stat.ResistanceLevel)
+		if stat.Limit != lim {
+			t.Errorf("Wrong LogStat limit. Expected %d, got %d.", lim, stat.Limit)
 		}
 
 		if stat.Size != logManager.size {

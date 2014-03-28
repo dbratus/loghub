@@ -57,7 +57,7 @@ func logCommand(args []string) {
 	address := flags.String("listen", ":10000", "Address and port to listen.")
 	home := flags.String("home", "", "Home directory.") //TODO: Get default from environment variable.
 	hub := flags.String("hub", "", "Hub address.")
-	resistanceLevel := flags.Int64("resist", 1024, "Resistance level in megabytes.")
+	lim := flags.Int64("lim", 1024, "Log size limit in megabytes.")
 	statInerval := flags.Duration("stat", time.Second*10, "Status sending interval.")
 
 	flags.Parse(args)
@@ -90,7 +90,9 @@ func logCommand(args []string) {
 
 	var stopLogStatSender func()
 
-	if s, err := startLogStatSender(*hub, logManager, port, *resistanceLevel, *statInerval); err != nil {
+	lastTransferId := new(int64)
+
+	if s, err := startLogStatSender(*hub, logManager, port, *lim, lastTransferId, *statInerval); err != nil {
 		println("Failed to start the stat sender:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -99,7 +101,7 @@ func logCommand(args []string) {
 
 	var stopServer func()
 
-	if s, err := startServer(*address, NewLogProtocolHandler(logManager)); err != nil {
+	if s, err := startServer(*address, NewLogProtocolHandler(logManager, lastTransferId)); err != nil {
 		println("Failed to start the server:", err.Error(), ".")
 		os.Exit(1)
 	} else {
