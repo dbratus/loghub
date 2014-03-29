@@ -92,7 +92,7 @@ func logCommand(args []string) {
 
 	lastTransferId := new(int64)
 
-	if s, err := startLogStatSender(*hub, logManager, port, *lim, lastTransferId, *statInerval); err != nil {
+	if s, err := startLogStatSender(*hub, logManager, port, *lim*1024*1024, lastTransferId, *statInerval); err != nil {
 		println("Failed to start the stat sender:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -120,13 +120,14 @@ func logCommand(args []string) {
 
 func hubCommand(args []string) {
 	flags := flag.NewFlagSet("hub", flag.ExitOnError)
+	statAddress := flags.String("stat", ":9999", "Address and port to collect stat.")
 	address := flags.String("listen", ":10000", "Address and port to listen.")
 
 	hub := NewDefaultHub()
 
 	var stopLogStatReceiver func()
 
-	if s, err := startLogStatReceiver(*address, hub); err != nil {
+	if s, err := startLogStatReceiver(*statAddress, hub); err != nil {
 		println("Failed to start the stat receiver:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -162,6 +163,7 @@ func getCommand(args []string) {
 	src := flags.String("src", "", "Comma separated list of log sources.")
 	format := flags.String("fmt", "%s %s %d %s", "Log entry format.")
 	tsfmt := flags.String("tsfmt", "2006-01-02 15:04:05", "Timestamp format.")
+	isUtc := flags.Bool("utc", false, "Return UTC timestamps.")
 
 	flags.Parse(args)
 
@@ -212,7 +214,15 @@ func getCommand(args []string) {
 	close(queries)
 
 	formatText := func(ent *lhproto.OutgoingLogEntryJSON) {
-		fmt.Printf(*format, timestampToTime(ent.Ts).Format(*tsfmt), ent.Src, ent.Sev, ent.Msg)
+		var tsToTime func(int64) time.Time
+
+		if *isUtc {
+			tsToTime = timestampToTime
+		} else {
+			tsToTime = timestampToLocalTime
+		}
+
+		fmt.Printf(*format, tsToTime(ent.Ts).Format(*tsfmt), ent.Src, ent.Sev, ent.Msg)
 		fmt.Println()
 	}
 
@@ -236,7 +246,7 @@ func getCommand(args []string) {
 }
 
 func putCommand(args []string) {
-	flags := flag.NewFlagSet("get", flag.ExitOnError)
+	flags := flag.NewFlagSet("put", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of log.")
 
 	flags.Parse(args)

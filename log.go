@@ -119,6 +119,10 @@ func timeToTimestamp(t time.Time) int64 {
 	return t.UnixNano()
 }
 
+func timestampToLocalTime(t int64) time.Time {
+	return time.Unix(0, t)
+}
+
 func timestampToTime(t int64) time.Time {
 	return time.Unix(0, t).UTC()
 }
