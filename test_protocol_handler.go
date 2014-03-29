@@ -14,6 +14,7 @@ import (
 const (
 	testLogEntriesCount = 10
 	testLogQueriesCount = 10
+	testStatCnt         = 2
 	testMaxTries        = 100
 )
 
@@ -109,6 +110,12 @@ func (mh *testProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhp
 
 		result <- &lhproto.AcceptResultJSON{true}
 	}
+}
+
+func (mh *testProtocolHandler) Stat(stats chan *lhproto.StatJSON) {
+	stats <- &lhproto.StatJSON{"127.0.0.1:10001", 1024, 1024 * 1024}
+	stats <- &lhproto.StatJSON{"127.0.0.1:10002", 1024, 1024 * 1024}
+	close(stats)
 }
 
 func (mh *testProtocolHandler) Close() {

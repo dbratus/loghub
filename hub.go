@@ -29,6 +29,7 @@ type Hub interface {
 	ReadLog([]*LogQuery, chan *LogEntry)
 	SetLogStat(net.IP, *LogStat)
 	Truncate(string, int64)
+	GetStats() map[string]*LogStat
 
 	Close()
 }
@@ -47,6 +48,7 @@ type defaultHub struct {
 	readChan     chan readLogMultiSrcCmd
 	statChan     chan setLogStatCmd
 	truncateChan chan truncateLogCmd
+	getStatsChan chan chan map[string]*LogStat
 	closeChan    chan chan bool
 }
 
@@ -55,6 +57,7 @@ func NewDefaultHub() Hub {
 		make(chan readLogMultiSrcCmd),
 		make(chan setLogStatCmd),
 		make(chan truncateLogCmd),
+		make(chan chan map[string]*LogStat),
 		make(chan chan bool),
 	}
 
@@ -190,6 +193,17 @@ func (h *defaultHub) run() {
 		}
 	}
 
+	onGetStats := func(statsChan chan map[string]*LogStat) {
+		stats := make(map[string]*LogStat)
+
+		for addr, log := range logs {
+			stats[addr] = log.stat
+		}
+
+		statsChan <- stats
+		close(statsChan)
+	}
+
 	for {
 		select {
 		case cmd, ok := <-h.readChan:
@@ -207,6 +221,11 @@ func (h *defaultHub) run() {
 				onTruncate(cmd)
 			}
 
+		case statsChan, ok := <-h.getStatsChan:
+			if ok {
+				onGetStats(statsChan)
+			}
+
 		case <-time.After(logTimeoutsCheckInteval):
 			onCheckTimeouts()
 
@@ -216,6 +235,10 @@ func (h *defaultHub) run() {
 		case ack := <-h.closeChan:
 			for cmd := range h.readChan {
 				onRead(cmd)
+			}
+
+			for statsChan := range h.getStatsChan {
+				onGetStats(statsChan)
 			}
 
 			ack <- true
@@ -237,9 +260,16 @@ func (h *defaultHub) Truncate(source string, limit int64) {
 	h.truncateChan <- truncateLogCmd{source, limit}
 }
 
+func (h *defaultHub) GetStats() map[string]*LogStat {
+	statsChan := make(chan map[string]*LogStat)
+	h.getStatsChan <- statsChan
+	return <-statsChan
+}
+
 func (h *defaultHub) Close() {
 	close(h.readChan)
 	close(h.statChan)
+	close(h.getStatsChan)
 
 	ack := make(chan bool)
 	h.closeChan <- ack

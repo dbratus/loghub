@@ -26,6 +26,7 @@ var commands = map[string]func([]string){
 	"get":      getCommand,
 	"put":      putCommand,
 	"truncate": truncateCommand,
+	"stat":     statCommand,
 	"help":     helpCommand,
 }
 
@@ -48,6 +49,7 @@ func printCommands() {
 	fmt.Println("  get       Gets log entries from log or hub.")
 	fmt.Println("  put       Puts log entries to log or hub.")
 	fmt.Println("  truncate  Truncates the log.")
+	fmt.Println("  stat      Gets stats of a log or hub.")
 	fmt.Println()
 	fmt.Println("See 'loghub help <command>' for more information on a specific command.")
 }
@@ -91,8 +93,9 @@ func logCommand(args []string) {
 	var stopLogStatSender func()
 
 	lastTransferId := new(int64)
+	limBytes := *lim * 1024 * 1024
 
-	if s, err := startLogStatSender(*hub, logManager, port, *lim*1024*1024, lastTransferId, *statInerval); err != nil {
+	if s, err := startLogStatSender(*hub, logManager, port, limBytes, lastTransferId, *statInerval); err != nil {
 		println("Failed to start the stat sender:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -101,7 +104,7 @@ func logCommand(args []string) {
 
 	var stopServer func()
 
-	if s, err := startServer(*address, NewLogProtocolHandler(logManager, lastTransferId)); err != nil {
+	if s, err := startServer(*address, NewLogProtocolHandler(logManager, lastTransferId, limBytes)); err != nil {
 		println("Failed to start the server:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -290,6 +293,8 @@ func truncateCommand(args []string) {
 	src := flags.String("src", "", "Comma separated list of log sources.")
 	lim := flags.Duration("lim", 0, "The limit of the truncation.")
 
+	flags.Parse(args)
+
 	if *addr == "" {
 		println("Log or hub address is not specified.")
 		os.Exit(1)
@@ -314,6 +319,42 @@ func truncateCommand(args []string) {
 				},
 			)
 		}
+	}
+}
+
+func statCommand(args []string) {
+	flags := flag.NewFlagSet("stat", flag.ExitOnError)
+	addr := flags.String("addr", "", "Address and port of a log or a hub.")
+
+	flags.Parse(args)
+
+	if *addr == "" {
+		println("Log or hub address is not specified.")
+		os.Exit(1)
+	}
+
+	client := lhproto.NewClient(*addr, 1)
+	defer client.Close()
+
+	stats := make(chan *lhproto.StatJSON)
+
+	client.Stat(stats)
+
+	formatSize := func(sz int64) string {
+		kb := int64(1024)
+		mb := kb * int64(1024)
+
+		if sz < kb {
+			return fmt.Sprintf("%db", sz)
+		} else if sz < mb {
+			return fmt.Sprintf("%dKb", sz/kb)
+		} else {
+			return fmt.Sprintf("%dMb", sz/mb)
+		}
+	}
+
+	for stat := range stats {
+		fmt.Printf("%s %s/%s %.2f%%\n", stat.Addr, formatSize(stat.Sz), formatSize(stat.Lim), float64(stat.Sz)*100.0/float64(stat.Lim))
 	}
 }
 

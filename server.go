@@ -175,6 +175,26 @@ func handleConnection(conn net.Conn, handler lhproto.ProtocolHandler) {
 				conn.Close()
 				return
 			}
+
+		case lhproto.ActionStat:
+			statChan := make(chan *lhproto.StatJSON)
+
+			go handler.Stat(statChan)
+
+			continueWriting := true
+
+			for stat := range statChan {
+				if continueWriting {
+					if err := writer.WriteJSON(stat); err != nil {
+						conn.Close()
+						continueWriting = false
+					}
+				}
+			}
+
+			if continueWriting {
+				writer.WriteDelimiter()
+			}
 		}
 	}
 }

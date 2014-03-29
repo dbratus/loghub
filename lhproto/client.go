@@ -457,6 +457,58 @@ func (cli *logHubClient) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJ
 	}()
 }
 
+func (cli *logHubClient) Stat(stats chan *StatJSON) {
+	var conn net.Conn
+	atomic.AddInt32(cli.activeOps, 1)
+
+	if c, ok := cli.getConn(); !ok {
+		atomic.AddInt32(cli.activeOps, -1)
+		close(stats)
+		return
+	} else {
+		conn = c
+	}
+
+	writer := jstream.NewWriter(conn)
+	reader := jstream.NewReader(conn)
+
+	header := MessageHeaderJSON{ActionStat}
+	if err := writer.WriteJSON(&header); err != nil {
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
+		cli.brokenConnChan <- conn
+		atomic.AddInt32(cli.activeOps, -1)
+		close(stats)
+		return
+	}
+
+	go func() {
+		ok := true
+
+		for {
+			stat := new(StatJSON)
+
+			if err := reader.ReadJSON(stat); err != nil {
+				if err != jstream.ErrStreamDelimiter {
+					clientTrace.Errorf("Failed to read message: %s.", err.Error())
+					ok = false
+				}
+				break
+			}
+
+			stats <- stat
+		}
+
+		if ok {
+			cli.putConnChan <- conn
+		} else {
+			cli.brokenConnChan <- conn
+		}
+
+		close(stats)
+		atomic.AddInt32(cli.activeOps, -1)
+	}()
+}
+
 func (cli *logHubClient) Close() {
 	atomic.AddInt32(cli.isClosed, 1)
 

@@ -75,6 +75,18 @@ func (mh *hubProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhpr
 	result <- &lhproto.AcceptResultJSON{false}
 }
 
+func (mh *hubProtocolHandler) Stat(stats chan *lhproto.StatJSON) {
+	for addr, stat := range mh.hub.GetStats() {
+		stats <- &lhproto.StatJSON{
+			addr,
+			stat.Size,
+			stat.Limit,
+		}
+	}
+
+	close(stats)
+}
+
 func (mh *hubProtocolHandler) Close() {
 	mh.hub.Close()
 }

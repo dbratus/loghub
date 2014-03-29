@@ -58,6 +58,10 @@ const (
 	//
 	//The response is \0 terminated AcceptResultJSON.
 	ActionAccept = "accept"
+
+	//The body is a sequence of StatJSON terminated by \0.
+	//<StatJSON>\0<StatJSON>\0...\0<StatJSON>\0\0
+	ActionStat = "stat"
 )
 
 //The message header that each message starts with.
@@ -135,6 +139,13 @@ type AcceptResultJSON struct {
 	Result bool
 }
 
+//The result of 'stat' action.
+type StatJSON struct {
+	Addr string
+	Sz   int64
+	Lim  int64
+}
+
 //The interface which a protocol handler must implement.
 type ProtocolHandler interface {
 	Write(chan *IncomingLogEntryJSON)
@@ -143,5 +154,6 @@ type ProtocolHandler interface {
 	Truncate(*TruncateJSON)
 	Transfer(*TransferJSON)
 	Accept(*AcceptJSON, chan *InternalLogEntryJSON, chan *AcceptResultJSON)
+	Stat(chan *StatJSON)
 	Close()
 }

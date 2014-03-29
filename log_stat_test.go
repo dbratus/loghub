@@ -56,6 +56,10 @@ func (h *hubForStatTest) SetLogStat(addr net.IP, stat *LogStat) {
 func (h *hubForStatTest) Truncate(source string, limit int64) {
 }
 
+func (h *hubForStatTest) GetStats() map[string]*LogStat {
+	return nil
+}
+
 func (h *hubForStatTest) Close() {
 }
 

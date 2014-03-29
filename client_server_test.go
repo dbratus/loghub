@@ -138,6 +138,22 @@ func TestClientServer(t *testing.T) {
 		t.FailNow()
 	}
 
+	statResult := make(chan *lhproto.StatJSON)
+
+	client.Stat(statResult)
+
+	statCnt := 0
+	for statCnt < testStatCnt {
+		select {
+		case <-statResult:
+			statCnt++
+
+		case <-time.After(time.Second * 10):
+			t.Errorf("Stats have not arrived. Expected %d, got %d.", testStatCnt, statCnt)
+			t.FailNow()
+		}
+	}
+
 	queries := make(chan *lhproto.LogQueryJSON)
 	result := make(chan *lhproto.OutgoingLogEntryJSON)
 

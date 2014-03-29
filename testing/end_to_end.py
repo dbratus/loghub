@@ -53,7 +53,8 @@ try:
 		for i in range(1, len(log_procs) + 1):
 			write_some_log(i, 1, 10)
 
-		#TODO: Get and print stat.
+		#Getting stats.
+		subprocess.call(['loghub', 'stat', '-addr', ':' + str(BASE_PORT)])
 
 		#Waiting for input.
 		if sys.stdin.readline()  == 'q\n':

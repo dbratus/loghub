@@ -13,10 +13,11 @@ import (
 type logProtocolHandler struct {
 	logManager     LogManager
 	lastTransferId *int64
+	limit          int64
 }
 
-func NewLogProtocolHandler(logManager LogManager, lastTransferId *int64) lhproto.ProtocolHandler {
-	return &logProtocolHandler{logManager, lastTransferId}
+func NewLogProtocolHandler(logManager LogManager, lastTransferId *int64, limit int64) lhproto.ProtocolHandler {
+	return &logProtocolHandler{logManager, lastTransferId, limit}
 }
 
 func (mh *logProtocolHandler) Write(entries chan *lhproto.IncomingLogEntryJSON) {
@@ -122,6 +123,15 @@ func (mh *logProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhpr
 
 	result <- &lhproto.AcceptResultJSON{<-ack}
 	atomic.StoreInt64(mh.lastTransferId, cmd.TransferId)
+}
+
+func (mh *logProtocolHandler) Stat(stats chan *lhproto.StatJSON) {
+	stats <- &lhproto.StatJSON{
+		"",
+		mh.logManager.Size(),
+		mh.limit,
+	}
+	close(stats)
 }
 
 func (mh *logProtocolHandler) Close() {
