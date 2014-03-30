@@ -21,11 +21,21 @@ func TestBalancer(t *testing.T) {
 		"h6": 13,
 	}
 
+	for h, _ := range hosts {
+		blc.UpdateHost(h, 0, 10)
+	}
+
+	transfers := blc.MakeTransfers()
+	if len(transfers) > 0 {
+		t.Errorf("Too many transfers. Expected %d, got %d.", 0, len(transfers))
+		t.FailNow()
+	}
+
 	for h, sz := range hosts {
 		blc.UpdateHost(h, sz, 10)
 	}
 
-	transfers := blc.MakeTransfers()
+	transfers = blc.MakeTransfers()
 	if len(transfers) < 3 {
 		t.Errorf("Not enough transfers. Expected %d, got %d.", 3, len(transfers))
 		t.FailNow()

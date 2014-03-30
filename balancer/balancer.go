@@ -45,12 +45,20 @@ func (h *hostInfo) load() float64 {
 }
 
 func compareHostInfo(a, b rbtree.Item) int {
-	aload := a.(*hostInfo).load()
-	bload := b.(*hostInfo).load()
+	ahost := a.(*hostInfo)
+	bhost := b.(*hostInfo)
+	aload := ahost.load()
+	bload := bhost.load()
 
 	if aload > bload {
 		return 1
 	} else if aload < bload {
+		return -1
+	}
+
+	if ahost.addr > bhost.addr {
+		return 1
+	} else if ahost.addr < bhost.addr {
 		return -1
 	}
 
@@ -111,24 +119,9 @@ func (bl *Balancer) TransferComplete(transferId int64) {
 	}
 }
 
-func (bl *Balancer) deleteHostFromTree(host *hostInfo) bool {
-	iter := bl.hosts.FindLE(host)
-
-	for !iter.Limit() && iter.Item() != host {
-		iter = iter.Next()
-	}
-
-	if !iter.Limit() {
-		bl.hosts.DeleteWithIterator(iter)
-		return true
-	}
-
-	return false
-}
-
 func (bl *Balancer) UpdateHost(hostAddr string, size int64, lim int64) {
 	if host, found := bl.hostsByAddr[hostAddr]; found {
-		isHostInTree := bl.deleteHostFromTree(host)
+		isHostInTree := bl.hosts.DeleteWithKey(host)
 
 		host.size = size
 		host.limit = lim
@@ -151,7 +144,7 @@ func (bl *Balancer) UpdateHost(hostAddr string, size int64, lim int64) {
 
 func (bl *Balancer) RemoveHost(hostAddr string) {
 	if host, found := bl.hostsByAddr[hostAddr]; found {
-		bl.deleteHostFromTree(host)
+		bl.hosts.DeleteWithKey(host)
 		delete(bl.hostsByAddr, hostAddr)
 	}
 }

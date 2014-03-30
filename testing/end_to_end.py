@@ -12,9 +12,9 @@ STAT_PORT = 9999
 #Starting hub.
 hub_proc = subprocess.Popen([
 	'loghub', 'hub', 
+	'-debug',
 	'-listen', ':' + str(BASE_PORT), 
-	'-stat', ':' + str(STAT_PORT),
-	'-debug'])
+	'-stat', ':' + str(STAT_PORT)])
 
 #Starting logs.
 log_procs = []
@@ -23,11 +23,11 @@ log_lim = 1
 for i in range(1, LOGS_COUNT+1):
 	log_proc = subprocess.Popen([
 		'loghub', 'log', 
+		'-debug',
 		'-listen', ':' + str(BASE_PORT + i), 
 		'-home', LOG_BASE + 'log' + str(i),
 		'-hub', ':' + str(STAT_PORT),
-		'-lim', str(log_lim),
-		'-debug'])
+		'-lim', str(log_lim)])
 
 	log_procs.append(log_proc)
 	log_lim *= 2
