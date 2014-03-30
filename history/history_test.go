@@ -13,7 +13,7 @@ import (
 func TestHistory(t *testing.T) {
 	hist := New(time.Hour)
 
-	start := time.Now().Round(time.Hour)
+	start := time.Now().Truncate(time.Hour)
 	point := start
 
 	for i := 0; i < 3; i++ {
@@ -61,10 +61,26 @@ func TestHistory(t *testing.T) {
 	}
 }
 
+func TestDelete(t *testing.T) {
+	hist := New(time.Hour)
+
+	start := time.Now().Truncate(time.Hour)
+
+	hist.Append(start)
+	hist.Append(start.Add(time.Hour * 2))
+
+	hist.Delete(start)
+
+	if !hist.Start().Equal(start.Add(time.Hour * 2)) {
+		t.Error("Invalid start after delete.")
+		t.FailNow()
+	}
+}
+
 func TestRounding(t *testing.T) {
 	hist := New(time.Hour)
 
-	start := time.Now().Round(time.Hour)
+	start := time.Now().Truncate(time.Hour)
 	point := start
 
 	for i := 0; i < 60; i++ {

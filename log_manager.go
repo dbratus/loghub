@@ -546,14 +546,45 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
-	truncateLogSource := func(srcInfo *logSourceInfo, lck rnglock.LockId, src string, limit int64) {
-		defer srcInfo.lock.Unlock(lck)
+	getFileNamesForTruncation := func(hist *history.History, src string, limit int64) (fileNames []string, removeDir bool) {
+		fileNames = make([]string, 0, 100)
+		removeDir = false
+
+		if hist.IsEmpty() {
+			removeDir = true
+			return
+		}
 
 		srcDirName := mg.home + "/" + getSourceDirName(src)
-		minTs := timeToTimestamp(srcInfo.history.Start())
+		minTs := timeToTimestamp(hist.Start())
 
 		for minTs <= limit {
-			fileName := srcDirName + "/" + getFileNameForTimestamp(minTs)
+			fileNames = append(fileNames, srcDirName+"/"+getFileNameForTimestamp(minTs))
+
+			hist.Truncate(timestampToTime(minTs))
+
+			if hist.IsEmpty() {
+				removeDir = true
+				deleteLogSource(src)
+				break
+			} else {
+				minTs = timeToTimestamp(hist.Start())
+			}
+		}
+
+		return
+	}
+
+	truncateLogSource := func(lock *rnglock.RangeLock, lck rnglock.LockId, src string, fileNames []string, removeDir bool) {
+		defer lock.Unlock(lck)
+
+		srcDirName := getSourceDirName(src)
+
+		logManagerTrace.Debugf("Truncating log source %s.", src)
+
+		for _, fileName := range fileNames {
+			logManagerTrace.Debugf("Deleting log file %s.", fileName)
+
 			size := int64(0)
 
 			if stat, err := os.Stat(fileName); err == nil {
@@ -567,18 +598,13 @@ func (mg *defaultLogManager) run() {
 			} else {
 				atomic.AddInt64(closedSize, -size)
 			}
+		}
 
-			srcInfo.history.Truncate(timestampToTime(minTs))
+		if removeDir {
+			logManagerTrace.Debugf("Deleting source directory %s.", srcDirName)
 
-			if srcInfo.history.IsEmpty() {
-				if err := os.RemoveAll(srcDirName); err != nil {
-					logManagerTrace.Errorf("Failed to remove source directory: %s.", err.Error())
-				}
-
-				deleteLogSource(src)
-				break
-			} else {
-				minTs = timeToTimestamp(srcInfo.history.Start())
+			if err := os.RemoveAll(mg.home + "/" + srcDirName); err != nil {
+				logManagerTrace.Errorf("Failed to remove source directory: %s.", err.Error())
 			}
 		}
 	}
@@ -601,7 +627,9 @@ func (mg *defaultLogManager) run() {
 						}
 					}
 
-					go truncateLogSource(srcInfo, lck, src, cmd.limit)
+					fileNames, removeDir := getFileNamesForTruncation(srcInfo.history, src, cmd.limit)
+
+					go truncateLogSource(srcInfo.lock, lck, src, fileNames, removeDir)
 				}
 			}
 		}
@@ -609,7 +637,7 @@ func (mg *defaultLogManager) run() {
 
 	onGetTransferChunk := func(cmd getTransferChunkCmd) {
 		for src, srcInfo := range logSources {
-			if srcInfo.history.Start().Before(time.Now().Truncate(time.Hour)) {
+			if !srcInfo.history.IsEmpty() && srcInfo.history.Start().Before(time.Now().Truncate(time.Hour)) {
 				chunkId := getSourceDirName(src) + "/" + getFileNameForTimestamp(timeToTimestamp(srcInfo.history.Start()))
 				fileName := mg.home + "/" + chunkId
 
@@ -758,6 +786,7 @@ func (mg *defaultLogManager) run() {
 
 		if srcInfo, found := logSources[src]; found {
 			fileName := mg.home + "/" + cmd.id
+			dirName := mg.home + "/" + getSourceDirName(src)
 
 			if stat, err := os.Stat(fileName); err == nil {
 				rangeStart, rangeEnd := getRangeByFileName(ts)
@@ -766,15 +795,29 @@ func (mg *defaultLogManager) run() {
 
 				onClose(cmd.id)
 
-				go func() {
+				srcInfo.history.Delete(timestampToTime(rangeStart))
+				removeDir := false
+
+				if srcInfo.history.IsEmpty() {
+					removeDir = true
+					deleteLogSource(src)
+				}
+
+				go func(removeDir bool) {
 					if err := os.Remove(fileName); err == nil {
 						atomic.AddInt64(closedSize, -stat.Size())
+					} else {
+						logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
+					}
+
+					if err := os.RemoveAll(dirName); err != nil {
+						logManagerTrace.Errorf("Failed to remove source directory: %s.", err.Error())
 					}
 
 					srcInfo.lock.Unlock(lck)
 					cmd.ack <- true
 					close(cmd.ack)
-				}()
+				}(removeDir)
 			} else {
 				cmd.ack <- false
 				close(cmd.ack)

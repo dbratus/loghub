@@ -64,6 +64,37 @@ func (h *History) IsEmpty() bool {
 	return h.head == nil
 }
 
+func (h *History) Delete(ts time.Time) {
+	if h.IsEmpty() {
+		return
+	}
+
+	rounded := ts.Truncate(h.unitOfMeasure)
+	cur := h.tail
+	var prev *segment = nil
+
+	for cur != nil {
+		if rounded.Equal(cur.start) {
+			break
+		}
+
+		prev = cur
+		cur = cur.next
+	}
+
+	if prev != nil {
+		prev.next = cur.next
+	}
+
+	if h.tail == cur {
+		h.tail = cur.next
+	}
+
+	if h.head == cur {
+		h.head = prev
+	}
+}
+
 func (h *History) Truncate(limit time.Time) {
 	rounded := limit.Truncate(h.unitOfMeasure).Add(h.unitOfMeasure)
 	cur := h.tail
