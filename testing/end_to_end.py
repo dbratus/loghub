@@ -2,6 +2,7 @@ import subprocess
 import sys
 import json
 import random
+import io
 
 LOG_BASE='/var/loghub/'
 LOGS_COUNT = 10
@@ -12,11 +13,12 @@ STAT_PORT = 9999
 hub_proc = subprocess.Popen([
 	'loghub', 'hub', 
 	'-listen', ':' + str(BASE_PORT), 
-	'-stat', ':' + str(STAT_PORT)])
+	'-stat', ':' + str(STAT_PORT),
+	'-debug'])
 
 #Starting logs.
 log_procs = []
-log_lim = 10
+log_lim = 1
 
 for i in range(1, LOGS_COUNT+1):
 	log_proc = subprocess.Popen([
@@ -24,7 +26,8 @@ for i in range(1, LOGS_COUNT+1):
 		'-listen', ':' + str(BASE_PORT + i), 
 		'-home', LOG_BASE + 'log' + str(i),
 		'-hub', ':' + str(STAT_PORT),
-		'-lim', str(log_lim)])
+		'-lim', str(log_lim),
+		'-debug'])
 
 	log_procs.append(log_proc)
 	log_lim *= 2
@@ -33,10 +36,15 @@ def write_some_log(log_proc_num, min_cnt, max_cnt):
 	writer_proc = subprocess.Popen(['loghub', 'put', '-addr', ':' + str(BASE_PORT + log_proc_num)], stdin=subprocess.PIPE)
 
 	for i in range(0, random.randint(min_cnt, max_cnt)):
+		msg = io.StringIO()
+
+		for j in range(0, random.randint(1, 100)):
+			msg.write(u'Word' + unicode(j) + u' ')
+
 		ent = {
 			'Sev': random.randint(0, 10),
 			'Src': 'LogSource' + str(random.randint(1, 100)),
-			'Msg': 'Message ' + str(random.randint(1, 10000))
+			'Msg': msg.getvalue()
 		}
 
 		ent_json = json.dumps(ent)
@@ -51,7 +59,7 @@ try:
 	while True:
 		#Write some logs.
 		for i in range(1, len(log_procs) + 1):
-			write_some_log(i, 1, 10)
+			write_some_log(i, 1, 10000)
 
 		#Getting stats.
 		subprocess.call(['loghub', 'stat', '-addr', ':' + str(BASE_PORT)])

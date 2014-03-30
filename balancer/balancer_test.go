@@ -26,9 +26,18 @@ func TestBalancer(t *testing.T) {
 	}
 
 	transfers := blc.MakeTransfers()
-
 	if len(transfers) < 3 {
 		t.Errorf("Not enough transfers. Expected %d, got %d.", 3, len(transfers))
+		t.FailNow()
+	}
+
+	for h, sz := range hosts {
+		blc.UpdateHost(h, sz, 10)
+	}
+
+	transfersTwice := blc.MakeTransfers()
+	if len(transfersTwice) > 0 {
+		t.Errorf("Too many transfers. Expected %d, got %d.", 0, len(transfersTwice))
 		t.FailNow()
 	}
 
@@ -41,15 +50,15 @@ func TestBalancer(t *testing.T) {
 		blc.UpdateHost(h, sz, 10)
 	}
 
-	transfers = blc.MakeTransfers()
+	transfersTwice = blc.MakeTransfers()
 
-	if len(transfers) > 0 {
+	if len(transfersTwice) > 0 {
 		t.Errorf("Too many transfers. Expected %d, got %d.", 0, len(transfers))
 		t.FailNow()
 	}
 
-	for h, _ := range hosts {
-		blc.TransferComplete(h)
+	for _, t := range transfers {
+		blc.TransferComplete(t.Id)
 	}
 
 	transfers = blc.MakeTransfers()

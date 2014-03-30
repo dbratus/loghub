@@ -10,9 +10,10 @@ import (
 )
 
 type Balancer struct {
-	hosts          *rbtree.Tree
-	hostsByAddr    map[string]*hostInfo
-	nextTransferId int64
+	hosts            *rbtree.Tree
+	hostsByAddr      map[string]*hostInfo
+	currentTransfers map[int64]*Transfer
+	nextTransferId   int64
 }
 
 type Transfer struct {
@@ -57,7 +58,12 @@ func compareHostInfo(a, b rbtree.Item) int {
 }
 
 func New() *Balancer {
-	return &Balancer{rbtree.NewTree(compareHostInfo), make(map[string]*hostInfo), 1}
+	return &Balancer{
+		rbtree.NewTree(compareHostInfo),
+		make(map[string]*hostInfo),
+		make(map[int64]*Transfer),
+		1,
+	}
 }
 
 func (bl *Balancer) MakeTransfers() (transfers []*Transfer) {
@@ -79,6 +85,7 @@ func (bl *Balancer) MakeTransfers() (transfers []*Transfer) {
 				lmost.addr,
 				rmost.getAmountToTransfer(lmost),
 			}
+			bl.currentTransfers[trf.Id] = trf
 			bl.nextTransferId++
 
 			transfers = append(transfers, trf)
@@ -90,13 +97,21 @@ func (bl *Balancer) MakeTransfers() (transfers []*Transfer) {
 	return
 }
 
-func (bl *Balancer) TransferComplete(hostAddr string) {
-	if host, found := bl.hostsByAddr[hostAddr]; found {
-		bl.hosts.Insert(host)
+func (bl *Balancer) TransferComplete(transferId int64) {
+	if trf, found := bl.currentTransfers[transferId]; found {
+		if host, found := bl.hostsByAddr[trf.From]; found {
+			bl.hosts.Insert(host)
+		}
+
+		if host, found := bl.hostsByAddr[trf.To]; found {
+			bl.hosts.Insert(host)
+		}
+
+		delete(bl.currentTransfers, transferId)
 	}
 }
 
-func (bl *Balancer) deleteHostFromTree(host *hostInfo) {
+func (bl *Balancer) deleteHostFromTree(host *hostInfo) bool {
 	iter := bl.hosts.FindLE(host)
 
 	for !iter.Limit() && iter.Item() != host {
@@ -105,17 +120,22 @@ func (bl *Balancer) deleteHostFromTree(host *hostInfo) {
 
 	if !iter.Limit() {
 		bl.hosts.DeleteWithIterator(iter)
+		return true
 	}
+
+	return false
 }
 
 func (bl *Balancer) UpdateHost(hostAddr string, size int64, lim int64) {
 	if host, found := bl.hostsByAddr[hostAddr]; found {
-		bl.deleteHostFromTree(host)
+		isHostInTree := bl.deleteHostFromTree(host)
 
 		host.size = size
 		host.limit = lim
 
-		bl.hosts.Insert(host)
+		if isHostInTree {
+			bl.hosts.Insert(host)
+		}
 
 	} else {
 		host = &hostInfo{

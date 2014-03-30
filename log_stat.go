@@ -54,10 +54,10 @@ func startLogStatSender(hubAddr string, log LogManager, port int, lim int64, las
 			if err := encoder.Encode(stat); err != nil {
 				logStatSenderTrace.Errorf("Failed to encode LogStat: %s.", err.Error())
 			} else {
-				if n, err := conn.WriteToUDP(msgBuf.Bytes(), hubAddrUdp); err != nil {
+				if _, err := conn.WriteToUDP(msgBuf.Bytes(), hubAddrUdp); err != nil {
 					logStatSenderTrace.Errorf("Failed to write LogStat: %s.", err.Error())
 				} else {
-					logStatSenderTrace.Debugf("%d of %d bytes sent.", n, msgBuf.Len())
+					logStatSenderTrace.Debugf("Stat sent: sz=%d, lim=%d, trid=%d.", stat.Size, stat.Limit, stat.LastTransferId)
 				}
 			}
 
@@ -109,16 +109,15 @@ func startLogStatReceiver(addr string, hub Hub) (func(), error) {
 	go func() {
 		for {
 			if n, senderAddr, err := conn.ReadFromUDP(buf); err == nil {
-				logStatReceiverTrace.Debugf("Received %d bytes from %s.", n, senderAddr.IP.String())
-
 				msgBuf := bytes.NewBuffer(buf[:n])
 				decoder := gob.NewDecoder(msgBuf)
 
 				var stat LogStat
 
 				if err := decoder.Decode(&stat); err != nil {
-					logStatSenderTrace.Errorf("Failed to decode LogStat: %s.", err.Error())
+					logStatReceiverTrace.Errorf("Failed to decode LogStat: %s.", err.Error())
 				} else {
+					logStatReceiverTrace.Debugf("Stat received from %s: sz=%d, lim=%d, trid=%d.", senderAddr.IP.String(), stat.Size, stat.Limit, stat.LastTransferId)
 					hub.SetLogStat(senderAddr.IP, &stat)
 				}
 

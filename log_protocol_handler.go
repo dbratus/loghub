@@ -7,8 +7,11 @@ package main
 
 import (
 	"github.com/dbratus/loghub/lhproto"
+	"github.com/dbratus/loghub/trace"
 	"sync/atomic"
 )
+
+var logProtocolHanderTrace = trace.New("LogProtocolHander")
 
 type logProtocolHandler struct {
 	logManager     LogManager
@@ -78,6 +81,8 @@ func (mh *logProtocolHandler) Truncate(cmd *lhproto.TruncateJSON) {
 }
 
 func (mh *logProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
+	logProtocolHanderTrace.Debugf("Got transfer of %d to %s, id %d.", cmd.Lim, cmd.Addr, cmd.Id)
+
 	lim := cmd.Lim
 	cli := lhproto.NewClient(cmd.Addr, 1)
 	defer cli.Close()
@@ -86,6 +91,8 @@ func (mh *logProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
 		entries := make(chan *LogEntry)
 
 		if chunkId, chunkSize, found := mh.logManager.GetTransferChunk(lim, entries); found {
+			logProtocolHanderTrace.Debugf("Transfering %s, sz=%d.", chunkId, chunkSize)
+
 			acceptResult := make(chan *lhproto.AcceptResultJSON)
 			acceptEntries := make(chan *lhproto.InternalLogEntryJSON)
 
@@ -95,17 +102,32 @@ func (mh *logProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
 				acceptEntries <- LogEntryToInternalLogEntryJSON(ent)
 			}
 
+			close(acceptEntries)
+
 			if res := <-acceptResult; res.Result {
+				if res.Result {
+					logProtocolHanderTrace.Debugf("Transfer of %s completed successfully.", chunkId)
+				} else {
+					logProtocolHanderTrace.Debugf("Transfer of %s failed.", chunkId)
+				}
+
 				mh.logManager.DeleteTransferChunk(chunkId)
 
 				lim -= chunkSize
 
 				if lim <= 0 {
+					logProtocolHanderTrace.Debugf("Transfer %d complete. No more data to transfer.", cmd.Id)
 					break
 				}
+
+				logProtocolHanderTrace.Debugf("Continuing transfer %d, %d bytes to transfer left.", cmd.Id, lim)
 			} else {
+				logProtocolHanderTrace.Debugf("Transfer %d complete. Accept failed.", cmd.Id)
 				break
 			}
+		} else {
+			logProtocolHanderTrace.Debugf("Transfer %d complete. No no chunk found.", cmd.Id)
+			break
 		}
 	}
 
@@ -113,6 +135,8 @@ func (mh *logProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
 }
 
 func (mh *logProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhproto.InternalLogEntryJSON, result chan *lhproto.AcceptResultJSON) {
+	logProtocolHanderTrace.Debugf("Accepting %s of transfer %d.", cmd.Chunk, cmd.TransferId)
+
 	entriesToAccept := make(chan *LogEntry)
 
 	ack := mh.logManager.AcceptTransferChunk(cmd.Chunk, entriesToAccept)
@@ -121,8 +145,17 @@ func (mh *logProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhpr
 		entriesToAccept <- InternalLogEntryJSONToLogEntry(ent)
 	}
 
-	result <- &lhproto.AcceptResultJSON{<-ack}
-	atomic.StoreInt64(mh.lastTransferId, cmd.TransferId)
+	close(entriesToAccept)
+
+	acceptResult := <-ack
+
+	if acceptResult {
+		logProtocolHanderTrace.Debugf("Accepted %s of transfer %d successfully.", cmd.Chunk, cmd.TransferId)
+	} else {
+		logProtocolHanderTrace.Debugf("Accept %s of transfer %d failed.", cmd.Chunk, cmd.TransferId)
+	}
+
+	result <- &lhproto.AcceptResultJSON{acceptResult}
 }
 
 func (mh *logProtocolHandler) Stat(stats chan *lhproto.StatJSON) {

@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/dbratus/loghub/lhproto"
+	"github.com/dbratus/loghub/trace"
 	"net"
 	"os"
 	"os/signal"
@@ -61,6 +62,7 @@ func logCommand(args []string) {
 	hub := flags.String("hub", "", "Hub address.")
 	lim := flags.Int64("lim", 1024, "Log size limit in megabytes.")
 	statInerval := flags.Duration("stat", time.Second*10, "Status sending interval.")
+	debug := flags.Bool("debug", false, "Write debug information.")
 
 	flags.Parse(args)
 
@@ -77,6 +79,10 @@ func logCommand(args []string) {
 	if *hub == "" {
 		println("Hub is not specified.")
 		os.Exit(1)
+	}
+
+	if *debug {
+		trace.SetTraceLevel(trace.LevelDebug)
 	}
 
 	var port int
@@ -125,6 +131,13 @@ func hubCommand(args []string) {
 	flags := flag.NewFlagSet("hub", flag.ExitOnError)
 	statAddress := flags.String("stat", ":9999", "Address and port to collect stat.")
 	address := flags.String("listen", ":10000", "Address and port to listen.")
+	debug := flags.Bool("debug", false, "Write debug information.")
+
+	flags.Parse(args)
+
+	if *debug {
+		trace.SetTraceLevel(trace.LevelDebug)
+	}
 
 	hub := NewDefaultHub()
 

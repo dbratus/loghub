@@ -6,6 +6,7 @@
 package rnglock
 
 import (
+	"sync/atomic"
 	"time"
 )
 
@@ -13,6 +14,7 @@ type RangeLock struct {
 	lockRequests   chan lockRequest
 	unlockRequests chan LockId
 	closeChan      chan chan bool
+	isClosed       *int32
 }
 
 type rng struct {
@@ -38,7 +40,7 @@ func (a *rng) overlaps(b rng) bool {
 }
 
 func New() *RangeLock {
-	rl := &RangeLock{make(chan lockRequest), make(chan LockId), make(chan chan bool)}
+	rl := &RangeLock{make(chan lockRequest), make(chan LockId), make(chan chan bool), new(int32)}
 
 	go rl.processRequests()
 
@@ -186,10 +188,16 @@ func (rl *RangeLock) Unlock(lock LockId) {
 		return
 	}
 
+	if atomic.LoadInt32(rl.isClosed) > 0 {
+		return
+	}
+
 	rl.unlockRequests <- lock
 }
 
 func (rl *RangeLock) Close() {
+	atomic.AddInt32(rl.isClosed, 1)
+
 	close(rl.lockRequests)
 	close(rl.unlockRequests)
 

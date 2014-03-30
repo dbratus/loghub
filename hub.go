@@ -123,21 +123,27 @@ func (h *defaultHub) run() {
 	onSetLogStat := func(cmd setLogStatCmd) {
 		addr := cmd.addr.String() + ":" + strconv.Itoa(cmd.stat.Port)
 
-		hubTrace.Debugf("Got stat from %s: SZ=%d, RL=%d, TRID=%d.", addr, cmd.stat.Size, cmd.stat.Limit, cmd.stat.LastTransferId)
+		hubTrace.Debugf("Got stat from %s: sz=%d, lim=%d, trid=%d.", addr, cmd.stat.Size, cmd.stat.Limit, cmd.stat.LastTransferId)
 
 		if log, found := logs[addr]; found {
 			if cmd.stat.Timestamp > log.stat.Timestamp {
+				hubTrace.Debugf("Updating stat of %s.", addr)
+
 				log.stat = cmd.stat
 				log.timeout = time.Now().Add(logCloseTimeout)
 
 				logBalancer.UpdateHost(addr, cmd.stat.Size, cmd.stat.Limit)
 
 				if log.lastTransferId != cmd.stat.LastTransferId {
+					hubTrace.Debugf("Transfer %d at %s complete.", cmd.stat.LastTransferId, addr)
+
 					log.lastTransferId = cmd.stat.LastTransferId
-					logBalancer.TransferComplete(addr)
+					logBalancer.TransferComplete(cmd.stat.LastTransferId)
 				}
 			}
 		} else {
+			hubTrace.Debugf("Creating stat of %s.", addr)
+
 			logs[addr] = &logInfo{
 				cmd.stat,
 				lhproto.NewClient(addr, maxConnectionsPerClient),
@@ -181,6 +187,8 @@ func (h *defaultHub) run() {
 
 	onRebalance := func() {
 		for _, transfer := range logBalancer.MakeTransfers() {
+			hubTrace.Debugf("Transfering %d from %s to %s, id %d.", transfer.Amount, transfer.From, transfer.To, transfer.Id)
+
 			if log, found := logs[transfer.From]; found {
 				atomic.AddInt32(log.usersCount, 1)
 

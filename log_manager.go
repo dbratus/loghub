@@ -707,7 +707,6 @@ func (mg *defaultLogManager) run() {
 						}
 
 						mergedLogFile.Close()
-
 						logFile.Close()
 
 						if err := os.Remove(fileName); err != nil {
