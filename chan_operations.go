@@ -6,19 +6,24 @@
 package main
 
 func MergeLogs(leftIn chan *LogEntry, rightIn chan *LogEntry, out chan *LogEntry) {
-	//TODO: Remove duplicates.
+	var left, right, lastYield *LogEntry = nil, nil, nil
 
-	var left, right *LogEntry = nil, nil
+	yield := func(ent *LogEntry) {
+		if lastYield == nil || lastYield.Source != ent.Source || lastYield.Timestamp != ent.Timestamp {
+			out <- ent
+			lastYield = ent
+		}
+	}
 
 	for {
 		if left == nil {
 			if l, ok := <-leftIn; !ok {
 				if right != nil {
-					out <- right
+					yield(right)
 				}
 
 				for ent := range rightIn {
-					out <- ent
+					yield(ent)
 				}
 
 				close(out)
@@ -31,11 +36,11 @@ func MergeLogs(leftIn chan *LogEntry, rightIn chan *LogEntry, out chan *LogEntry
 		if right == nil {
 			if r, ok := <-rightIn; !ok {
 				if left != nil {
-					out <- left
+					yield(left)
 				}
 
 				for ent := range leftIn {
-					out <- ent
+					yield(ent)
 				}
 
 				close(out)
@@ -46,10 +51,10 @@ func MergeLogs(leftIn chan *LogEntry, rightIn chan *LogEntry, out chan *LogEntry
 		}
 
 		if left.Timestamp < right.Timestamp {
-			out <- left
+			yield(left)
 			left = nil
 		} else {
-			out <- right
+			yield(right)
 			right = nil
 		}
 	}
