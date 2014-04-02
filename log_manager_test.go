@@ -138,13 +138,14 @@ func TestTruncate(t *testing.T) {
 	makeTestLogHome(getTestLogHome())
 	defer deleteTestLogHome(getTestLogHome())
 
-	sources := [...]string{"src1", "src2", "src3"}
+	//sources := [...]string{"src1", "src2", "src3"}
+	sources := [...]string{"src1"}
 
-	entriesPerSource := 128
+	entriesPerSource := 32
 	logManager := NewDefaultLogManager(getTestLogHome())
 	defer logManager.Close()
 
-	baseTs := time.Now()
+	baseTs := time.Now().Truncate(time.Hour)
 
 	for _, src := range sources {
 		for i := 0; i < entriesPerSource; i++ {

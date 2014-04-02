@@ -593,10 +593,10 @@ func (mg *defaultLogManager) run() {
 				logManagerTrace.Errorf("Failed to get stat of log file: %s.", err.Error())
 			}
 
-			if err := os.Remove(fileName); err != nil {
-				logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
-			} else {
+			if err := os.Remove(fileName); err == nil {
 				atomic.AddInt64(closedSize, -size)
+			} else {
+				logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
 			}
 		}
 

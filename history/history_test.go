@@ -38,7 +38,7 @@ func TestHistory(t *testing.T) {
 		t.FailNow()
 	}
 
-	if !hist.End().Equal(start.Add(time.Hour * 6)) {
+	if !hist.End().Equal(start.Add(time.Hour * 7)) {
 		t.Error("Invalid end.")
 		t.FailNow()
 	}
@@ -75,6 +75,41 @@ func TestDelete(t *testing.T) {
 		t.Error("Invalid start after delete.")
 		t.FailNow()
 	}
+
+	hist.Append(start.Add(time.Hour * 3))
+	hist.Append(start.Add(time.Hour * 4))
+
+	hist.Delete(start.Add(time.Hour * 3))
+	hist.Truncate(start.Add(time.Hour * 2))
+
+	if !hist.Start().Equal(start.Add(time.Hour * 4)) {
+		t.Error("Invalid start after delete in the middle.")
+		t.FailNow()
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	hist := New(time.Hour)
+
+	start := time.Now().Truncate(time.Hour)
+	pointCnt := 10
+
+	for i := 0; i < pointCnt; i++ {
+		hist.Append(start.Add(time.Hour * time.Duration(i)))
+	}
+
+	limit := start.Add(time.Hour * time.Duration(pointCnt/2))
+	cnt := 0
+
+	for !hist.IsEmpty() && (hist.Start().Before(limit) || hist.Start().Equal(limit)) {
+		hist.Truncate(hist.Start())
+		cnt++
+	}
+
+	if cnt < pointCnt/2 {
+		t.Errorf("Expected %d truncations, got %d.", pointCnt/2, cnt)
+		t.FailNow()
+	}
 }
 
 func TestRounding(t *testing.T) {
@@ -88,8 +123,8 @@ func TestRounding(t *testing.T) {
 		point = point.Add(time.Minute)
 	}
 
-	if !hist.Start().Equal(hist.End()) {
-		t.Error("Start and end must be equal.")
+	if !hist.Start().Add(time.Hour).Equal(hist.End()) {
+		t.Error("End must be greater than start by 1 hour.")
 		t.FailNow()
 	}
 

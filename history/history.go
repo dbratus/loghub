@@ -26,20 +26,22 @@ func New(unitOfMeasure time.Duration) *History {
 }
 
 func (h *History) Append(point time.Time) {
-	rounded := point.Truncate(h.unitOfMeasure)
+	rpoint := point.Truncate(h.unitOfMeasure)
 
 	if h.head == nil {
-		h.head = &segment{rounded, rounded, nil}
+		h.head = &segment{rpoint, rpoint.Add(h.unitOfMeasure), nil}
 		h.tail = h.head
-	} else {
-		diff := rounded.Sub(h.head.end)
 
-		if diff > h.unitOfMeasure {
-			newHead := &segment{rounded, rounded, nil}
+	} else {
+		diff := rpoint.Sub(h.head.end)
+
+		if diff > 0 {
+			newHead := &segment{rpoint, rpoint.Add(h.unitOfMeasure), nil}
 			h.head.next = newHead
 			h.head = newHead
-		} else if diff > 0 {
-			h.head.end = rounded
+
+		} else if diff == 0 {
+			h.head.end = rpoint.Add(h.unitOfMeasure)
 		}
 	}
 }
@@ -69,12 +71,12 @@ func (h *History) Delete(ts time.Time) {
 		return
 	}
 
-	rounded := ts.Truncate(h.unitOfMeasure)
+	gapStart := ts.Truncate(h.unitOfMeasure)
 	cur := h.tail
 	var prev *segment = nil
 
 	for cur != nil {
-		if rounded.Equal(cur.start) {
+		if gapStart.Equal(cur.start) || (gapStart.After(cur.start) && gapStart.Before(cur.end)) {
 			break
 		}
 
@@ -82,30 +84,66 @@ func (h *History) Delete(ts time.Time) {
 		cur = cur.next
 	}
 
-	if prev != nil {
-		prev.next = cur.next
-	}
+	if cur != nil {
+		if gapStart.Equal(cur.start) {
+			//Deleting a point at the start of a segment.
 
-	if h.tail == cur {
-		h.tail = cur.next
-	}
+			newStart := gapStart.Add(h.unitOfMeasure)
 
-	if h.head == cur {
-		h.head = prev
+			if newStart.Before(cur.end) {
+				//If the segment is longer than a single point,
+				//updating its start.
+
+				cur.start = newStart
+			} else {
+				//Otherwise, removing whole segment.
+
+				if prev != nil {
+					prev.next = cur.next
+				}
+
+				if h.tail == cur {
+					h.tail = cur.next
+				}
+
+				if h.head == cur {
+					h.head = prev
+				}
+			}
+		} else {
+			gapEnd := gapStart.Add(h.unitOfMeasure)
+
+			if gapEnd.Equal(cur.end) {
+				//Deleting the point at the end of a segment.
+
+				cur.end = gapStart
+			} else {
+				//If the point is in the middle of a segment,
+				//the segment needs to be split.
+
+				newSeg := &segment{gapEnd, cur.end, cur.next}
+				cur.end = gapStart
+				cur.next = newSeg
+
+				if h.head == cur {
+					h.head = newSeg
+				}
+			}
+		}
 	}
 }
 
 func (h *History) Truncate(limit time.Time) {
-	rounded := limit.Truncate(h.unitOfMeasure).Add(h.unitOfMeasure)
+	rlimit := limit.Truncate(h.unitOfMeasure).Add(h.unitOfMeasure)
 	cur := h.tail
 
 	for cur != nil {
-		if rounded.Equal(cur.start) {
+		if cur.start.After(rlimit) || cur.start.Equal(rlimit) {
 			break
 		}
 
-		if rounded.After(cur.start) && (rounded.Before(cur.end) || rounded.Equal(cur.end)) {
-			cur.start = rounded
+		if rlimit.After(cur.start) && rlimit.Before(cur.end) {
+			cur.start = rlimit
 			break
 		}
 
