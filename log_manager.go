@@ -259,7 +259,7 @@ func initLogManager(home string) (logSources map[string]*logSourceInfo, size *in
 										*size += dirFile.Size()
 										start, _ := getRangeByFileName(logFileName)
 
-										srcInfo.history.Append(timestampToTime(start))
+										srcInfo.history.Insert(timestampToTime(start))
 									} else {
 										os.Remove(srcDirName + "/" + dirFile.Name())
 									}
@@ -270,7 +270,7 @@ func initLogManager(home string) (logSources map[string]*logSourceInfo, size *in
 									*size += dirFile.Size()
 									start, _ := getRangeByFileName(dirFile.Name())
 
-									srcInfo.history.Append(timestampToTime(start))
+									srcInfo.history.Insert(timestampToTime(start))
 								}
 							}
 						} else {
@@ -504,7 +504,7 @@ func (mg *defaultLogManager) run() {
 				srcInfo = inf
 			}
 
-			srcInfo.history.Append(timestampToTime(ent.Timestamp))
+			srcInfo.history.Insert(timestampToTime(ent.Timestamp))
 
 			if logFile, err := getLogFile(logFileToWrite, true, true); err == nil {
 				logFile.WriteLog(ent)
@@ -686,6 +686,7 @@ func (mg *defaultLogManager) run() {
 		rangeStart, rangeEnd := getRangeByFileName(ts)
 
 		lck := srcInfo.lock.Lock(opCnt, rangeStart, rangeEnd, false)
+		srcInfo.history.Insert(timestampToTime(rangeStart))
 
 		onError := func() {
 			PurgeLog(cmd.entries)

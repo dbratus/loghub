@@ -10,53 +10,63 @@ import (
 	"time"
 )
 
-func TestHistory(t *testing.T) {
+func TestInsert(t *testing.T) {
 	hist := New(time.Hour)
 
 	start := time.Now().Truncate(time.Hour)
-	point := start
 
-	for i := 0; i < 3; i++ {
-		hist.Append(point)
-		point = point.Add(time.Hour)
-	}
+	hist.Insert(start)
+	hist.Insert(start)
+	hist.Insert(start.Add(time.Hour * 2))
+	hist.Insert(start.Add(time.Hour * 1))
+	hist.Insert(start.Add(time.Hour * 4))
+	hist.Insert(start.Add(-time.Hour))
+	hist.Insert(start.Add(-time.Hour * 3))
 
-	point = point.Add(time.Hour)
-
-	for i := 0; i < 3; i++ {
-		hist.Append(point)
-		point = point.Add(time.Hour)
-	}
-
-	if hist.IsEmpty() {
-		t.Error("The history must not be empty.")
+	if !hist.Start().Equal(start.Add(-time.Hour * 3)) {
+		t.Error("Invalid start.")
 		t.FailNow()
 	}
+
+	hist.Truncate(start.Add(-time.Hour * 3))
+
+	if !hist.Start().Equal(start.Add(-time.Hour)) {
+		t.Error("Invalid start.")
+		t.FailNow()
+	}
+
+	hist.Truncate(start.Add(-time.Hour))
 
 	if !hist.Start().Equal(start) {
 		t.Error("Invalid start.")
 		t.FailNow()
 	}
 
-	if !hist.End().Equal(start.Add(time.Hour * 7)) {
-		t.Error("Invalid end.")
+	hist.Truncate(start)
+
+	if !hist.Start().Equal(start.Add(time.Hour * 1)) {
+		t.Error("Invalid start.")
 		t.FailNow()
 	}
 
-	limit := start.Add(time.Hour * 3)
-	expectedNewStart := start.Add(time.Hour * 4)
+	hist.Truncate(start.Add(time.Hour * 1))
 
-	hist.Truncate(limit)
-
-	if !hist.Start().Equal(expectedNewStart) {
-		t.Error("Invalid start after truncation.")
+	if !hist.Start().Equal(start.Add(time.Hour * 2)) {
+		t.Error("Invalid start.")
 		t.FailNow()
 	}
 
-	hist.Truncate(start.Add(time.Hour * 6))
+	hist.Truncate(start.Add(time.Hour * 2))
+
+	if !hist.Start().Equal(start.Add(time.Hour * 4)) {
+		t.Error("Invalid start.")
+		t.FailNow()
+	}
+
+	hist.Truncate(start.Add(time.Hour * 4))
 
 	if !hist.IsEmpty() {
-		t.Error("The history must be empty.")
+		t.Error("History must be empty.")
 		t.FailNow()
 	}
 }
@@ -66,8 +76,8 @@ func TestDelete(t *testing.T) {
 
 	start := time.Now().Truncate(time.Hour)
 
-	hist.Append(start)
-	hist.Append(start.Add(time.Hour * 2))
+	hist.Insert(start)
+	hist.Insert(start.Add(time.Hour * 2))
 
 	hist.Delete(start)
 
@@ -76,8 +86,8 @@ func TestDelete(t *testing.T) {
 		t.FailNow()
 	}
 
-	hist.Append(start.Add(time.Hour * 3))
-	hist.Append(start.Add(time.Hour * 4))
+	hist.Insert(start.Add(time.Hour * 3))
+	hist.Insert(start.Add(time.Hour * 4))
 
 	hist.Delete(start.Add(time.Hour * 3))
 	hist.Truncate(start.Add(time.Hour * 2))
@@ -95,7 +105,7 @@ func TestTruncate(t *testing.T) {
 	pointCnt := 10
 
 	for i := 0; i < pointCnt; i++ {
-		hist.Append(start.Add(time.Hour * time.Duration(i)))
+		hist.Insert(start.Add(time.Hour * time.Duration(i)))
 	}
 
 	limit := start.Add(time.Hour * time.Duration(pointCnt/2))
@@ -119,7 +129,7 @@ func TestRounding(t *testing.T) {
 	point := start
 
 	for i := 0; i < 60; i++ {
-		hist.Append(point)
+		hist.Insert(point)
 		point = point.Add(time.Minute)
 	}
 
@@ -131,5 +141,14 @@ func TestRounding(t *testing.T) {
 	if !hist.Start().Equal(start) {
 		t.Error("Invalid start of the history.")
 		t.FailNow()
+	}
+}
+
+func printHistRelTo(hist *History, start time.Time) {
+	for cur := hist.tail; cur != nil; cur = cur.next {
+		rstart := int(cur.start.Sub(start).Hours())
+		rend := int(cur.end.Sub(start).Hours())
+
+		println(rstart, "-", rend)
 	}
 }

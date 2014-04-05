@@ -25,7 +25,7 @@ func New(unitOfMeasure time.Duration) *History {
 	return &History{unitOfMeasure, nil, nil}
 }
 
-func (h *History) Append(point time.Time) {
+func (h *History) Insert(point time.Time) {
 	rpoint := point.Truncate(h.unitOfMeasure)
 
 	if h.head == nil {
@@ -33,16 +33,60 @@ func (h *History) Append(point time.Time) {
 		h.tail = h.head
 
 	} else {
-		diff := rpoint.Sub(h.head.end)
+		var prev *segment = nil
+		cur := h.tail
 
-		if diff > 0 {
-			newHead := &segment{rpoint, rpoint.Add(h.unitOfMeasure), nil}
-			h.head.next = newHead
-			h.head = newHead
+		newEnd := rpoint.Add(h.unitOfMeasure)
 
-		} else if diff == 0 {
-			h.head.end = rpoint.Add(h.unitOfMeasure)
+		for cur != nil {
+			if cur.start.Equal(rpoint) {
+				return
+			} else if cur.start.Before(rpoint) {
+				if cur.end.After(rpoint) {
+					return
+				} else if cur.end.Equal(rpoint) {
+					if cur.next != nil && cur.next.start.Equal(newEnd) {
+						if h.head == cur.next {
+							h.head = cur
+						}
+
+						cur.end = cur.next.end
+						cur.next = cur.next.next
+					} else {
+						cur.end = newEnd
+					}
+
+					return
+				}
+			} else {
+				if cur.start.After(newEnd) {
+					newSeg := &segment{rpoint, newEnd, cur}
+
+					if cur == h.tail {
+						h.tail = newSeg
+					} else {
+						prev.next = newSeg
+					}
+				} else {
+					cur.start = rpoint
+				}
+
+				return
+			}
+
+			prev = cur
+			cur = cur.next
 		}
+
+		newHead := &segment{rpoint, newEnd, nil}
+
+		if prev != nil {
+			prev.next = newHead
+		}
+
+		h.head = newHead
+
+		return
 	}
 }
 
