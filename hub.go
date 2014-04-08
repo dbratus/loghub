@@ -77,6 +77,7 @@ func (h *defaultHub) run() {
 
 	logs := make(map[string]*logInfo)
 	logBalancer := balancer.New()
+	cred := lhproto.Credentials{"", ""}
 
 	readLog := func(queries []*LogQuery, client lhproto.ProtocolHandler, entries chan *LogEntry, usersCount *int32) {
 		defer atomic.AddInt32(usersCount, -1)
@@ -84,7 +85,7 @@ func (h *defaultHub) run() {
 		queriesJSON := make(chan *lhproto.LogQueryJSON)
 		results := make(chan *lhproto.InternalLogEntryJSON)
 
-		client.InternalRead(queriesJSON, results)
+		client.InternalRead(&cred, queriesJSON, results)
 
 		for _, q := range queries {
 			queriesJSON <- LogQueryToLogQueryJSON(q)
@@ -180,7 +181,7 @@ func (h *defaultHub) run() {
 			go func(log *logInfo) {
 				defer atomic.AddInt32(log.usersCount, -1)
 
-				log.client.Truncate(&lhproto.TruncateJSON{cmd.source, cmd.limit})
+				log.client.Truncate(&cred, &lhproto.TruncateJSON{cmd.source, cmd.limit})
 			}(log)
 		}
 	}
@@ -195,7 +196,7 @@ func (h *defaultHub) run() {
 				go func(log *logInfo, transfer *balancer.Transfer) {
 					defer atomic.AddInt32(log.usersCount, -1)
 
-					log.client.Transfer(&lhproto.TransferJSON{transfer.Id, transfer.To, transfer.Amount})
+					log.client.Transfer(&cred, &lhproto.TransferJSON{transfer.Id, transfer.To, transfer.Amount})
 				}(log, transfer)
 			}
 		}

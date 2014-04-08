@@ -69,6 +69,12 @@ type MessageHeaderJSON struct {
 	//The action to perform (one of Action... contants).
 	//The action determines the structures of the body.
 	Action string
+
+	//Name of the user performing the operation.
+	Usr string
+
+	//Password of the user performing the operation.
+	Pass string
 }
 
 //The log entries written by applications.
@@ -146,14 +152,20 @@ type StatJSON struct {
 	Lim  int64
 }
 
+//User credentials.
+type Credentials struct {
+	User     string
+	Password string
+}
+
 //The interface which a protocol handler must implement.
 type ProtocolHandler interface {
-	Write(chan *IncomingLogEntryJSON)
-	Read(chan *LogQueryJSON, chan *OutgoingLogEntryJSON)
-	InternalRead(chan *LogQueryJSON, chan *InternalLogEntryJSON)
-	Truncate(*TruncateJSON)
-	Transfer(*TransferJSON)
-	Accept(*AcceptJSON, chan *InternalLogEntryJSON, chan *AcceptResultJSON)
-	Stat(chan *StatJSON)
+	Write(*Credentials, chan *IncomingLogEntryJSON)
+	Read(*Credentials, chan *LogQueryJSON, chan *OutgoingLogEntryJSON)
+	InternalRead(*Credentials, chan *LogQueryJSON, chan *InternalLogEntryJSON)
+	Truncate(*Credentials, *TruncateJSON)
+	Transfer(*Credentials, *TransferJSON)
+	Accept(*Credentials, *AcceptJSON, chan *InternalLogEntryJSON, chan *AcceptResultJSON)
+	Stat(*Credentials, chan *StatJSON)
 	Close()
 }

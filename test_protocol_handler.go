@@ -58,7 +58,7 @@ func newTestProtocolHandler() *testProtocolHandler {
 	}
 }
 
-func (mh *testProtocolHandler) Write(entries chan *lhproto.IncomingLogEntryJSON) {
+func (mh *testProtocolHandler) Write(cred *lhproto.Credentials, entries chan *lhproto.IncomingLogEntryJSON) {
 	if !mh.IsClosed() {
 		for ent := range entries {
 			mh.entriesWritten <- ent
@@ -66,7 +66,7 @@ func (mh *testProtocolHandler) Write(entries chan *lhproto.IncomingLogEntryJSON)
 	}
 }
 
-func (mh *testProtocolHandler) Read(queries chan *lhproto.LogQueryJSON, result chan *lhproto.OutgoingLogEntryJSON) {
+func (mh *testProtocolHandler) Read(cred *lhproto.Credentials, queries chan *lhproto.LogQueryJSON, result chan *lhproto.OutgoingLogEntryJSON) {
 	for _ = range queries {
 	}
 
@@ -77,7 +77,7 @@ func (mh *testProtocolHandler) Read(queries chan *lhproto.LogQueryJSON, result c
 	close(result)
 }
 
-func (mh *testProtocolHandler) InternalRead(queries chan *lhproto.LogQueryJSON, result chan *lhproto.InternalLogEntryJSON) {
+func (mh *testProtocolHandler) InternalRead(cred *lhproto.Credentials, queries chan *lhproto.LogQueryJSON, result chan *lhproto.InternalLogEntryJSON) {
 	for _ = range queries {
 	}
 
@@ -88,19 +88,19 @@ func (mh *testProtocolHandler) InternalRead(queries chan *lhproto.LogQueryJSON, 
 	close(result)
 }
 
-func (mh *testProtocolHandler) Truncate(cmd *lhproto.TruncateJSON) {
+func (mh *testProtocolHandler) Truncate(cred *lhproto.Credentials, cmd *lhproto.TruncateJSON) {
 	if !mh.IsClosed() {
 		mh.truncations <- cmd
 	}
 }
 
-func (mh *testProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
+func (mh *testProtocolHandler) Transfer(cred *lhproto.Credentials, cmd *lhproto.TransferJSON) {
 	if !mh.IsClosed() {
 		mh.transfers <- cmd
 	}
 }
 
-func (mh *testProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhproto.InternalLogEntryJSON, result chan *lhproto.AcceptResultJSON) {
+func (mh *testProtocolHandler) Accept(cred *lhproto.Credentials, cmd *lhproto.AcceptJSON, entries chan *lhproto.InternalLogEntryJSON, result chan *lhproto.AcceptResultJSON) {
 	if !mh.IsClosed() {
 		mh.accepts <- cmd
 
@@ -112,7 +112,7 @@ func (mh *testProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhp
 	}
 }
 
-func (mh *testProtocolHandler) Stat(stats chan *lhproto.StatJSON) {
+func (mh *testProtocolHandler) Stat(cred *lhproto.Credentials, stats chan *lhproto.StatJSON) {
 	stats <- &lhproto.StatJSON{"127.0.0.1:10001", 1024, 1024 * 1024}
 	stats <- &lhproto.StatJSON{"127.0.0.1:10002", 1024, 1024 * 1024}
 	close(stats)

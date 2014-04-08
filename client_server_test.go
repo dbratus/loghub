@@ -16,6 +16,7 @@ func TestClientServer(t *testing.T) {
 	//trace.SetTraceLevel(trace.LevelDebug)
 	//defer trace.SetTraceLevel(trace.LevelError)
 
+	cred := lhproto.Credentials{"", ""}
 	serverAddress := ":9999"
 	messageHandler := newTestProtocolHandler()
 	var closeServer func()
@@ -30,7 +31,7 @@ func TestClientServer(t *testing.T) {
 	client := lhproto.NewClient(serverAddress, 1)
 
 	entriesToWrite := make(chan *lhproto.IncomingLogEntryJSON)
-	client.Write(entriesToWrite)
+	client.Write(&cred, entriesToWrite)
 
 	for i := 0; i < testLogEntriesCount; i++ {
 		m := &lhproto.IncomingLogEntryJSON{1, "Source", "Message"}
@@ -53,7 +54,7 @@ func TestClientServer(t *testing.T) {
 	}
 
 	truncateCmd := lhproto.TruncateJSON{"src", 10000}
-	client.Truncate(&truncateCmd)
+	client.Truncate(&cred, &truncateCmd)
 
 	select {
 	case cmd := <-messageHandler.truncations:
@@ -72,7 +73,7 @@ func TestClientServer(t *testing.T) {
 	}
 
 	transferCmd := lhproto.TransferJSON{1, ":10000", 1024}
-	client.Transfer(&transferCmd)
+	client.Transfer(&cred, &transferCmd)
 
 	select {
 	case cmd := <-messageHandler.transfers:
@@ -94,7 +95,7 @@ func TestClientServer(t *testing.T) {
 	acceptChan := make(chan *lhproto.InternalLogEntryJSON)
 	acceptResult := make(chan *lhproto.AcceptResultJSON)
 
-	client.Accept(&acceptCmd, acceptChan, acceptResult)
+	client.Accept(&cred, &acceptCmd, acceptChan, acceptResult)
 
 	for i := 0; i < testLogEntriesCount; i++ {
 		m := &lhproto.InternalLogEntryJSON{1, "src", EncodingPlain, "Message", timeToTimestamp(time.Now())}
@@ -140,7 +141,7 @@ func TestClientServer(t *testing.T) {
 
 	statResult := make(chan *lhproto.StatJSON)
 
-	client.Stat(statResult)
+	client.Stat(&cred, statResult)
 
 	statCnt := 0
 	for statCnt < testStatCnt {
@@ -157,7 +158,7 @@ func TestClientServer(t *testing.T) {
 	queries := make(chan *lhproto.LogQueryJSON)
 	result := make(chan *lhproto.OutgoingLogEntryJSON)
 
-	client.Read(queries, result)
+	client.Read(&cred, queries, result)
 
 	for i := 0; i < testLogQueriesCount; i++ {
 		queries <- new(lhproto.LogQueryJSON)
@@ -182,7 +183,7 @@ func TestClientServer(t *testing.T) {
 	queries = make(chan *lhproto.LogQueryJSON)
 	resultInternal := make(chan *lhproto.InternalLogEntryJSON)
 
-	client.InternalRead(queries, resultInternal)
+	client.InternalRead(&cred, queries, resultInternal)
 
 	for i := 0; i < testLogQueriesCount; i++ {
 		queries <- new(lhproto.LogQueryJSON)
@@ -219,8 +220,9 @@ func TestClientWithoutServer(t *testing.T) {
 
 	client := lhproto.NewClient(":9999", 1)
 
+	cred := lhproto.Credentials{"", ""}
 	entriesToWrite := make(chan *lhproto.IncomingLogEntryJSON)
-	client.Write(entriesToWrite)
+	client.Write(&cred, entriesToWrite)
 
 	for i := 0; i < testLogEntriesCount; i++ {
 		m := &lhproto.IncomingLogEntryJSON{1, "Source", "Message"}
@@ -233,7 +235,7 @@ func TestClientWithoutServer(t *testing.T) {
 	queries := make(chan *lhproto.LogQueryJSON)
 	result := make(chan *lhproto.OutgoingLogEntryJSON)
 
-	client.Read(queries, result)
+	client.Read(&cred, queries, result)
 
 	for i := 0; i < testLogQueriesCount; i++ {
 		queries <- new(lhproto.LogQueryJSON)
@@ -246,7 +248,7 @@ func TestClientWithoutServer(t *testing.T) {
 	queries = make(chan *lhproto.LogQueryJSON)
 	resultInternal := make(chan *lhproto.InternalLogEntryJSON)
 
-	client.InternalRead(queries, resultInternal)
+	client.InternalRead(&cred, queries, resultInternal)
 
 	for i := 0; i < testLogQueriesCount; i++ {
 		queries <- new(lhproto.LogQueryJSON)

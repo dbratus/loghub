@@ -23,7 +23,7 @@ func NewLogProtocolHandler(logManager LogManager, lastTransferId *int64, limit i
 	return &logProtocolHandler{logManager, lastTransferId, limit}
 }
 
-func (mh *logProtocolHandler) Write(entries chan *lhproto.IncomingLogEntryJSON) {
+func (mh *logProtocolHandler) Write(cred *lhproto.Credentials, entries chan *lhproto.IncomingLogEntryJSON) {
 	for ent := range entries {
 		mh.logManager.WriteLog(IncomingLogEntryJSONToLogEntry(ent))
 	}
@@ -52,7 +52,7 @@ func (mh *logProtocolHandler) query(queries chan *lhproto.LogQueryJSON) chan *Lo
 	return results
 }
 
-func (mh *logProtocolHandler) Read(queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.OutgoingLogEntryJSON) {
+func (mh *logProtocolHandler) Read(cred *lhproto.Credentials, queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.OutgoingLogEntryJSON) {
 	result := mh.query(queries)
 
 	if result != nil {
@@ -64,7 +64,7 @@ func (mh *logProtocolHandler) Read(queries chan *lhproto.LogQueryJSON, resultJSO
 	close(resultJSON)
 }
 
-func (mh *logProtocolHandler) InternalRead(queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.InternalLogEntryJSON) {
+func (mh *logProtocolHandler) InternalRead(cred *lhproto.Credentials, queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.InternalLogEntryJSON) {
 	result := mh.query(queries)
 
 	if result != nil {
@@ -76,11 +76,11 @@ func (mh *logProtocolHandler) InternalRead(queries chan *lhproto.LogQueryJSON, r
 	close(resultJSON)
 }
 
-func (mh *logProtocolHandler) Truncate(cmd *lhproto.TruncateJSON) {
+func (mh *logProtocolHandler) Truncate(cred *lhproto.Credentials, cmd *lhproto.TruncateJSON) {
 	mh.logManager.Truncate(cmd.Src, cmd.Lim)
 }
 
-func (mh *logProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
+func (mh *logProtocolHandler) Transfer(cred *lhproto.Credentials, cmd *lhproto.TransferJSON) {
 	logProtocolHanderTrace.Debugf("Got transfer of %d to %s, id %d.", cmd.Lim, cmd.Addr, cmd.Id)
 
 	lim := cmd.Lim
@@ -96,7 +96,7 @@ func (mh *logProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
 			acceptResult := make(chan *lhproto.AcceptResultJSON)
 			acceptEntries := make(chan *lhproto.InternalLogEntryJSON)
 
-			cli.Accept(&lhproto.AcceptJSON{chunkId, cmd.Id}, acceptEntries, acceptResult)
+			cli.Accept(cred, &lhproto.AcceptJSON{chunkId, cmd.Id}, acceptEntries, acceptResult)
 
 			for ent := range entries {
 				acceptEntries <- LogEntryToInternalLogEntryJSON(ent)
@@ -134,7 +134,7 @@ func (mh *logProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
 	atomic.StoreInt64(mh.lastTransferId, cmd.Id)
 }
 
-func (mh *logProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhproto.InternalLogEntryJSON, result chan *lhproto.AcceptResultJSON) {
+func (mh *logProtocolHandler) Accept(cred *lhproto.Credentials, cmd *lhproto.AcceptJSON, entries chan *lhproto.InternalLogEntryJSON, result chan *lhproto.AcceptResultJSON) {
 	logProtocolHanderTrace.Debugf("Accepting %s of transfer %d.", cmd.Chunk, cmd.TransferId)
 
 	entriesToAccept := make(chan *LogEntry)
@@ -158,7 +158,7 @@ func (mh *logProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhpr
 	result <- &lhproto.AcceptResultJSON{acceptResult}
 }
 
-func (mh *logProtocolHandler) Stat(stats chan *lhproto.StatJSON) {
+func (mh *logProtocolHandler) Stat(cred *lhproto.Credentials, stats chan *lhproto.StatJSON) {
 	stats <- &lhproto.StatJSON{
 		"",
 		mh.logManager.Size(),

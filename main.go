@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"github.com/dbratus/loghub/lhproto"
 	"github.com/dbratus/loghub/trace"
+	"github.com/howeyc/gopass"
 	"net"
 	"os"
 	"os/signal"
@@ -180,6 +181,7 @@ func getCommand(args []string) {
 	format := flags.String("fmt", "%s %s %d %s", "Log entry format.")
 	tsfmt := flags.String("tsfmt", "2006-01-02 15:04:05", "Timestamp format.")
 	isUtc := flags.Bool("utc", false, "Return UTC timestamps.")
+	user := flags.String("u", "", "User name.")
 
 	flags.Parse(args)
 
@@ -211,13 +213,22 @@ func getCommand(args []string) {
 		to = timeToTimestamp(base.Add(*rng))
 	}
 
+	password := ""
+
+	if *user != "" {
+		fmt.Print("Enter password:")
+		password = string(gopass.GetPasswd())
+	}
+
+	cred := lhproto.Credentials{*user, password}
+
 	client := lhproto.NewClient(*addr, 1)
 	defer client.Close()
 
 	queries := make(chan *lhproto.LogQueryJSON)
 	results := make(chan *lhproto.OutgoingLogEntryJSON)
 
-	client.Read(queries, results)
+	client.Read(&cred, queries, results)
 
 	if *src == "" {
 		queries <- &lhproto.LogQueryJSON{from, to, *minSev, *maxSev, *src}
@@ -264,6 +275,7 @@ func getCommand(args []string) {
 func putCommand(args []string) {
 	flags := flag.NewFlagSet("put", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of log.")
+	user := flags.String("u", "", "User name.")
 
 	flags.Parse(args)
 
@@ -276,7 +288,16 @@ func putCommand(args []string) {
 	client := lhproto.NewClient(*addr, 1)
 	entChan := make(chan *lhproto.IncomingLogEntryJSON)
 
-	client.Write(entChan)
+	password := ""
+
+	if *user != "" {
+		fmt.Print("Enter password:")
+		password = string(gopass.GetPasswd())
+	}
+
+	cred := lhproto.Credentials{*user, password}
+
+	client.Write(&cred, entChan)
 
 	defer func() {
 		close(entChan)
@@ -305,6 +326,7 @@ func truncateCommand(args []string) {
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
 	src := flags.String("src", "", "Comma separated list of log sources.")
 	lim := flags.Duration("lim", 0, "The limit of the truncation.")
+	user := flags.String("u", "", "User name.")
 
 	flags.Parse(args)
 
@@ -318,14 +340,24 @@ func truncateCommand(args []string) {
 		os.Exit(1)
 	}
 
+	password := ""
+
+	if *user != "" {
+		fmt.Print("Enter password:")
+		password = string(gopass.GetPasswd())
+	}
+
+	cred := lhproto.Credentials{*user, password}
+
 	client := lhproto.NewClient(*addr, 1)
 	defer client.Close()
 
 	if *src == "" {
-		client.Truncate(&lhproto.TruncateJSON{*src, timeToTimestamp(time.Now().Add(*lim))})
+		client.Truncate(&cred, &lhproto.TruncateJSON{*src, timeToTimestamp(time.Now().Add(*lim))})
 	} else {
 		for _, s := range strings.Split(*src, ",") {
 			client.Truncate(
+				&cred,
 				&lhproto.TruncateJSON{
 					strings.Trim(s, " "),
 					timeToTimestamp(time.Now().Add(*lim)),
@@ -338,6 +370,7 @@ func truncateCommand(args []string) {
 func statCommand(args []string) {
 	flags := flag.NewFlagSet("stat", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
+	user := flags.String("u", "", "User name.")
 
 	flags.Parse(args)
 
@@ -346,12 +379,21 @@ func statCommand(args []string) {
 		os.Exit(1)
 	}
 
+	password := ""
+
+	if *user != "" {
+		fmt.Print("Enter password:")
+		password = string(gopass.GetPasswd())
+	}
+
+	cred := lhproto.Credentials{*user, password}
+
 	client := lhproto.NewClient(*addr, 1)
 	defer client.Close()
 
 	stats := make(chan *lhproto.StatJSON)
 
-	client.Stat(stats)
+	client.Stat(&cred, stats)
 
 	formatSize := func(sz int64) string {
 		kb := int64(1024)

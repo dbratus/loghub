@@ -39,17 +39,21 @@ func handleConnection(conn net.Conn, handler lhproto.ProtocolHandler) {
 
 	for {
 		var header lhproto.MessageHeaderJSON
+		var cred lhproto.Credentials
 
 		if err := reader.ReadJSON(&header); err != nil {
 			conn.Close()
 			break
 		}
 
+		cred.User = header.Usr
+		cred.Password = header.Pass
+
 		switch header.Action {
 		case lhproto.ActionWrite:
 			entChan := make(chan *lhproto.IncomingLogEntryJSON)
 
-			go handler.Write(entChan)
+			go handler.Write(&cred, entChan)
 
 			for {
 				ent := new(lhproto.IncomingLogEntryJSON)
@@ -71,7 +75,7 @@ func handleConnection(conn net.Conn, handler lhproto.ProtocolHandler) {
 			qChan := make(chan *lhproto.LogQueryJSON)
 			entChan := make(chan *lhproto.OutgoingLogEntryJSON)
 
-			go handler.Read(qChan, entChan)
+			go handler.Read(&cred, qChan, entChan)
 
 			if !readLogQueryJSONChannel(reader, handler, qChan) {
 				conn.Close()
@@ -97,7 +101,7 @@ func handleConnection(conn net.Conn, handler lhproto.ProtocolHandler) {
 			qChan := make(chan *lhproto.LogQueryJSON)
 			entChan := make(chan *lhproto.InternalLogEntryJSON)
 
-			go handler.InternalRead(qChan, entChan)
+			go handler.InternalRead(&cred, qChan, entChan)
 
 			if !readLogQueryJSONChannel(reader, handler, qChan) {
 				conn.Close()
@@ -127,7 +131,7 @@ func handleConnection(conn net.Conn, handler lhproto.ProtocolHandler) {
 				return
 			}
 
-			go handler.Truncate(&cmd)
+			go handler.Truncate(&cred, &cmd)
 
 		case lhproto.ActionTransfer:
 			var cmd lhproto.TransferJSON
@@ -137,7 +141,7 @@ func handleConnection(conn net.Conn, handler lhproto.ProtocolHandler) {
 				return
 			}
 
-			go handler.Transfer(&cmd)
+			go handler.Transfer(&cred, &cmd)
 
 		case lhproto.ActionAccept:
 			var cmd lhproto.AcceptJSON
@@ -150,7 +154,7 @@ func handleConnection(conn net.Conn, handler lhproto.ProtocolHandler) {
 			entChan := make(chan *lhproto.InternalLogEntryJSON)
 			resultChan := make(chan *lhproto.AcceptResultJSON)
 
-			go handler.Accept(&cmd, entChan, resultChan)
+			go handler.Accept(&cred, &cmd, entChan, resultChan)
 
 			for {
 				ent := new(lhproto.InternalLogEntryJSON)
@@ -179,7 +183,7 @@ func handleConnection(conn net.Conn, handler lhproto.ProtocolHandler) {
 		case lhproto.ActionStat:
 			statChan := make(chan *lhproto.StatJSON)
 
-			go handler.Stat(statChan)
+			go handler.Stat(&cred, statChan)
 
 			continueWriting := true
 

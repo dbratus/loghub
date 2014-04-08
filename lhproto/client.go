@@ -125,7 +125,7 @@ func (cli *logHubClient) getConn() (net.Conn, bool) {
 	return conn, ok
 }
 
-func (cli *logHubClient) Write(entries chan *IncomingLogEntryJSON) {
+func (cli *logHubClient) Write(cred *Credentials, entries chan *IncomingLogEntryJSON) {
 	var conn net.Conn
 	atomic.AddInt32(cli.activeOps, 1)
 
@@ -139,7 +139,7 @@ func (cli *logHubClient) Write(entries chan *IncomingLogEntryJSON) {
 
 	writer := jstream.NewWriter(conn)
 
-	header := MessageHeaderJSON{ActionWrite}
+	header := MessageHeaderJSON{ActionWrite, cred.User, cred.Password}
 	if err := writer.WriteJSON(&header); err != nil {
 		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
@@ -175,7 +175,7 @@ func (cli *logHubClient) Write(entries chan *IncomingLogEntryJSON) {
 	}()
 }
 
-func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *OutgoingLogEntryJSON) {
+func (cli *logHubClient) Read(cred *Credentials, queries chan *LogQueryJSON, entries chan *OutgoingLogEntryJSON) {
 	//TODO: Get rid of duplication.
 	var conn net.Conn
 	atomic.AddInt32(cli.activeOps, 1)
@@ -191,7 +191,7 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 
 	writer := jstream.NewWriter(conn)
 
-	header := MessageHeaderJSON{ActionRead}
+	header := MessageHeaderJSON{ActionRead, cred.User, cred.Password}
 	if err := writer.WriteJSON(&header); err != nil {
 		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
@@ -249,7 +249,7 @@ func (cli *logHubClient) Read(queries chan *LogQueryJSON, entries chan *Outgoing
 	}()
 }
 
-func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *InternalLogEntryJSON) {
+func (cli *logHubClient) InternalRead(cred *Credentials, queries chan *LogQueryJSON, entries chan *InternalLogEntryJSON) {
 	//TODO: Get rid of duplication.
 	var conn net.Conn
 	atomic.AddInt32(cli.activeOps, 1)
@@ -265,7 +265,7 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 
 	writer := jstream.NewWriter(conn)
 
-	header := MessageHeaderJSON{ActionInternalRead}
+	header := MessageHeaderJSON{ActionInternalRead, cred.User, cred.Password}
 	if err := writer.WriteJSON(&header); err != nil {
 		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
@@ -323,7 +323,7 @@ func (cli *logHubClient) InternalRead(queries chan *LogQueryJSON, entries chan *
 	}()
 }
 
-func (cli *logHubClient) Truncate(cmd *TruncateJSON) {
+func (cli *logHubClient) Truncate(cred *Credentials, cmd *TruncateJSON) {
 	var conn net.Conn
 	atomic.AddInt32(cli.activeOps, 1)
 	defer atomic.AddInt32(cli.activeOps, -1)
@@ -336,7 +336,7 @@ func (cli *logHubClient) Truncate(cmd *TruncateJSON) {
 
 	writer := jstream.NewWriter(conn)
 
-	header := MessageHeaderJSON{ActionTruncate}
+	header := MessageHeaderJSON{ActionTruncate, cred.User, cred.Password}
 	if err := writer.WriteJSON(&header); err != nil {
 		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
@@ -352,7 +352,7 @@ func (cli *logHubClient) Truncate(cmd *TruncateJSON) {
 	cli.putConnChan <- conn
 }
 
-func (cli *logHubClient) Transfer(cmd *TransferJSON) {
+func (cli *logHubClient) Transfer(cred *Credentials, cmd *TransferJSON) {
 	var conn net.Conn
 	atomic.AddInt32(cli.activeOps, 1)
 	defer atomic.AddInt32(cli.activeOps, -1)
@@ -365,7 +365,7 @@ func (cli *logHubClient) Transfer(cmd *TransferJSON) {
 
 	writer := jstream.NewWriter(conn)
 
-	header := MessageHeaderJSON{ActionTransfer}
+	header := MessageHeaderJSON{ActionTransfer, cred.User, cred.Password}
 	if err := writer.WriteJSON(&header); err != nil {
 		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
@@ -381,7 +381,7 @@ func (cli *logHubClient) Transfer(cmd *TransferJSON) {
 	cli.putConnChan <- conn
 }
 
-func (cli *logHubClient) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJSON, resultChan chan *AcceptResultJSON) {
+func (cli *logHubClient) Accept(cred *Credentials, cmd *AcceptJSON, entries chan *InternalLogEntryJSON, resultChan chan *AcceptResultJSON) {
 	var conn net.Conn
 	atomic.AddInt32(cli.activeOps, 1)
 
@@ -401,7 +401,7 @@ func (cli *logHubClient) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJ
 	writer := jstream.NewWriter(conn)
 	reader := jstream.NewReader(conn)
 
-	header := MessageHeaderJSON{ActionAccept}
+	header := MessageHeaderJSON{ActionAccept, cred.User, cred.Password}
 	if err := writer.WriteJSON(&header); err != nil {
 		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn
@@ -457,7 +457,7 @@ func (cli *logHubClient) Accept(cmd *AcceptJSON, entries chan *InternalLogEntryJ
 	}()
 }
 
-func (cli *logHubClient) Stat(stats chan *StatJSON) {
+func (cli *logHubClient) Stat(cred *Credentials, stats chan *StatJSON) {
 	var conn net.Conn
 	atomic.AddInt32(cli.activeOps, 1)
 
@@ -472,7 +472,7 @@ func (cli *logHubClient) Stat(stats chan *StatJSON) {
 	writer := jstream.NewWriter(conn)
 	reader := jstream.NewReader(conn)
 
-	header := MessageHeaderJSON{ActionStat}
+	header := MessageHeaderJSON{ActionStat, cred.User, cred.Password}
 	if err := writer.WriteJSON(&header); err != nil {
 		clientTrace.Errorf("Failed to write message: %s.", err.Error())
 		cli.brokenConnChan <- conn

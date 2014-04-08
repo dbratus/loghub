@@ -17,7 +17,7 @@ func NewHubProtocolHandler(hub Hub) lhproto.ProtocolHandler {
 	return &hubProtocolHandler{hub}
 }
 
-func (mh *hubProtocolHandler) Write(entries chan *lhproto.IncomingLogEntryJSON) {
+func (mh *hubProtocolHandler) Write(cred *lhproto.Credentials, entries chan *lhproto.IncomingLogEntryJSON) {
 	lhproto.PurgeIncomingLogEntryJSON(entries)
 }
 
@@ -39,7 +39,7 @@ func (mh *hubProtocolHandler) query(queriesJSON chan *lhproto.LogQueryJSON) chan
 	}
 }
 
-func (mh *hubProtocolHandler) Read(queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.OutgoingLogEntryJSON) {
+func (mh *hubProtocolHandler) Read(cred *lhproto.Credentials, queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.OutgoingLogEntryJSON) {
 	result := mh.query(queries)
 
 	if result != nil {
@@ -51,7 +51,7 @@ func (mh *hubProtocolHandler) Read(queries chan *lhproto.LogQueryJSON, resultJSO
 	close(resultJSON)
 }
 
-func (mh *hubProtocolHandler) InternalRead(queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.InternalLogEntryJSON) {
+func (mh *hubProtocolHandler) InternalRead(cred *lhproto.Credentials, queries chan *lhproto.LogQueryJSON, resultJSON chan *lhproto.InternalLogEntryJSON) {
 	result := mh.query(queries)
 
 	if result != nil {
@@ -63,19 +63,19 @@ func (mh *hubProtocolHandler) InternalRead(queries chan *lhproto.LogQueryJSON, r
 	close(resultJSON)
 }
 
-func (mh *hubProtocolHandler) Truncate(cmd *lhproto.TruncateJSON) {
+func (mh *hubProtocolHandler) Truncate(cred *lhproto.Credentials, cmd *lhproto.TruncateJSON) {
 	mh.hub.Truncate(cmd.Src, cmd.Lim)
 }
 
-func (mh *hubProtocolHandler) Transfer(cmd *lhproto.TransferJSON) {
+func (mh *hubProtocolHandler) Transfer(cred *lhproto.Credentials, cmd *lhproto.TransferJSON) {
 }
 
-func (mh *hubProtocolHandler) Accept(cmd *lhproto.AcceptJSON, entries chan *lhproto.InternalLogEntryJSON, result chan *lhproto.AcceptResultJSON) {
+func (mh *hubProtocolHandler) Accept(cred *lhproto.Credentials, cmd *lhproto.AcceptJSON, entries chan *lhproto.InternalLogEntryJSON, result chan *lhproto.AcceptResultJSON) {
 	lhproto.PurgeInternalLogEntryJSON(entries)
 	result <- &lhproto.AcceptResultJSON{false}
 }
 
-func (mh *hubProtocolHandler) Stat(stats chan *lhproto.StatJSON) {
+func (mh *hubProtocolHandler) Stat(cred *lhproto.Credentials, stats chan *lhproto.StatJSON) {
 	for addr, stat := range mh.hub.GetStats() {
 		stats <- &lhproto.StatJSON{
 			addr,
