@@ -1,4 +1,4 @@
-// +build linux,darwin
+// +build linux darwin
 
 // Copyright (C) 2014 Dmitry Bratus
 //
