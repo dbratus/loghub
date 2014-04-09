@@ -12,11 +12,11 @@ import (
 	"github.com/dbratus/loghub/history"
 	"github.com/dbratus/loghub/rnglock"
 	"github.com/dbratus/loghub/trace"
+	"github.com/dbratus/loghub/rlimit"
 	"os"
 	"regexp"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 )
 
@@ -215,12 +215,6 @@ func getLogFileNamesForRange(sources []string, minTimestamp int64, maxTimestamp 
 	close(fileNames)
 }
 
-func getMaxOpenFiles() uint64 {
-	var lim syscall.Rlimit
-	syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim)
-	return (lim.Cur / 4) * 3
-}
-
 func initLogManager(home string) (logSources map[string]*logSourceInfo, size *int64, initialized bool) {
 	initialized = true
 	logSources = make(map[string]*logSourceInfo)
@@ -304,7 +298,7 @@ func (mg *defaultLogManager) run() {
 	logFileTimeouts := make(map[string]*int64)
 	closeLogFileChan := make(chan string)
 
-	maxOpenFiles := getMaxOpenFiles()
+	maxOpenFiles := rlimit.GetMaxOpenFiles()
 
 	opCnt := int64(0)
 
@@ -604,7 +598,7 @@ func (mg *defaultLogManager) run() {
 			logManagerTrace.Debugf("Deleting source directory %s.", srcDirName)
 
 			if err := os.RemoveAll(mg.home + "/" + srcDirName); err != nil {
-				logManagerTrace.Errorf("Failed to remove source directory: %s.", err.Error())
+				logManagerTrace.Errorf("Failed to remove source directory on truncation: %s.", err.Error())
 			}
 		}
 	}
@@ -808,11 +802,11 @@ func (mg *defaultLogManager) run() {
 					if err := os.Remove(fileName); err == nil {
 						atomic.AddInt64(closedSize, -stat.Size())
 					} else {
-						logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
+						logManagerTrace.Errorf("Failed to remove log file on transfer chunk deletion: %s.", err.Error())
 					}
 
 					if err := os.RemoveAll(dirName); err != nil {
-						logManagerTrace.Errorf("Failed to remove source directory: %s.", err.Error())
+						logManagerTrace.Errorf("Failed to remove source directory on transfer chunk deletion: %s.", err.Error())
 					}
 
 					srcInfo.lock.Unlock(lck)

@@ -17,7 +17,7 @@ func TestClientServer(t *testing.T) {
 	//defer trace.SetTraceLevel(trace.LevelError)
 
 	cred := lhproto.Credentials{"", ""}
-	serverAddress := ":9999"
+	serverAddress := "127.0.0.1:9999"
 	messageHandler := newTestProtocolHandler()
 	var closeServer func()
 

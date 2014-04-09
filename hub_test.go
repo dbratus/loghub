@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"testing"
 	"time"
+	//"github.com/dbratus/loghub/trace"
 )
 
 func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testProtocolHandler)) {
@@ -21,13 +22,13 @@ func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testProtocolHandl
 
 	for i := 0; i < logsCount; i++ {
 		port := 10000 + i
-		serverAddress := ":" + strconv.Itoa(port)
+		serverAddress := "127.0.0.1:" + strconv.Itoa(port)
 		protocolHandler := newTestProtocolHandler()
 
 		protocolHandlers = append(protocolHandlers, protocolHandler)
 
 		if c, err := startServer(serverAddress, protocolHandler); err != nil {
-			t.Errorf("Failed to start LogHub server", err.Error())
+			t.Errorf("Failed to start LogHub server %s.", err.Error())
 			t.FailNow()
 		} else {
 			closeFuncs = append(closeFuncs, c)
@@ -36,16 +37,20 @@ func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testProtocolHandl
 		hub.SetLogStat(net.IPv4(127, 0, 0, 1), &LogStat{timeToTimestamp(time.Now()), 0, 0, port, 1})
 	}
 
-	defer func() {
-		for _, c := range closeFuncs {
+	defer func(closers []func()) {
+		for _, c := range closers {
 			c()
 		}
-	}()
 
-	test(hub, protocolHandlers)
+		<-time.After(time.Millisecond * 100)
+	}(closeFuncs)
+
+	test(hub, protocolHandlers)	
 }
 
 func TestHubSetStatRead(t *testing.T) {
+	//trace.SetTraceLevel(trace.LevelDebug)
+	//defer trace.SetTraceLevel(trace.LevelInfo)
 	logsCount := 10
 
 	runHubTest(t, logsCount, func(hub Hub, protocolHandlers []*testProtocolHandler) {

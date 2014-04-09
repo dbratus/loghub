@@ -23,6 +23,7 @@ const hopLength = 64
 var logFileTrace = trace.New("LogFile")
 
 type LogFile struct {
+	path      string
 	writeChan chan *LogEntry
 	readChan  chan readLogCmd
 	sizeChan  chan chan int64
@@ -52,8 +53,11 @@ func OpenLogFile(path string, create bool) (*LogFile, error) {
 		flags |= os.O_CREATE
 	}
 
+	logFileTrace.Debugf("Opening %s.", path)
+
 	if f, err := os.OpenFile(path, flags, 0660); err == nil {
 		log := &LogFile{
+			path,
 			make(chan *LogEntry),
 			make(chan readLogCmd),
 			make(chan chan int64),
@@ -492,6 +496,8 @@ func (log *LogFile) run(file *os.File) {
 			for cnt := atomic.LoadInt32(readsCounter); cnt > 0; cnt = atomic.LoadInt32(readsCounter) {
 				runtime.Gosched()
 			}
+
+			logFileTrace.Debugf("Closing %s.", log.path)
 
 			file.Close()
 			ack <- true

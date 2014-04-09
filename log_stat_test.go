@@ -70,7 +70,7 @@ func TestLogStatSenderReceiver(t *testing.T) {
 	lim := int64(20000)
 	lastTransferId := new(int64)
 
-	if cl, err := startLogStatSender(":10000", logManager, senderPort, lim, lastTransferId, time.Second); err != nil {
+	if cl, err := startLogStatSender("127.0.0.1:10000", logManager, senderPort, lim, lastTransferId, time.Second); err != nil {
 		t.Errorf("Failed to start LogStat sender: %s.", err.Error())
 		t.FailNow()
 	} else {
@@ -79,7 +79,7 @@ func TestLogStatSenderReceiver(t *testing.T) {
 
 	hub := &hubForStatTest{make(chan *LogStat)}
 
-	if cl, err := startLogStatReceiver(":10000", hub); err != nil {
+	if cl, err := startLogStatReceiver("127.0.0.1:10000", hub); err != nil {
 		t.Errorf("Failed to start LogStat receiver: %s.", err.Error())
 		t.FailNow()
 	} else {
