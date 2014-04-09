@@ -5,11 +5,19 @@
 
 package main
 
+import (
+	"bytes"
+)
+
 func MergeLogs(leftIn chan *LogEntry, rightIn chan *LogEntry, out chan *LogEntry) {
 	var left, right, lastYield *LogEntry = nil, nil, nil
 
 	yield := func(ent *LogEntry) {
-		if lastYield == nil || lastYield.Source != ent.Source || lastYield.Timestamp != ent.Timestamp {
+		if lastYield == nil ||
+			lastYield.Timestamp != ent.Timestamp ||
+			lastYield.Source != ent.Source ||
+			bytes.Compare(lastYield.Message, ent.Message) != 0 {
+
 			out <- ent
 			lastYield = ent
 		}
