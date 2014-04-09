@@ -7,8 +7,10 @@ package lhproto
 
 import (
 	"container/list"
+	"crypto/tls"
 	"github.com/dbratus/loghub/jstream"
 	"github.com/dbratus/loghub/trace"
+	"io"
 	"net"
 	"runtime"
 	"sync/atomic"
@@ -19,24 +21,34 @@ var clientTrace = trace.New("LogHubClient")
 type logHubClient struct {
 	connPoolSize   int
 	address        string
-	getConnChan    chan chan net.Conn
-	putConnChan    chan net.Conn
-	brokenConnChan chan net.Conn
+	getConnChan    chan chan io.ReadWriteCloser
+	putConnChan    chan io.ReadWriteCloser
+	brokenConnChan chan io.ReadWriteCloser
 	closeChan      chan chan bool
 	isClosed       *int32
 	activeOps      *int32
+	tlsConfig      *tls.Config
 }
 
-func NewClient(address string, connPoolSize int) ProtocolHandler {
+func NewClient(address string, connPoolSize int, useTls bool, skipCertValidation bool) ProtocolHandler {
+	var tlsConfig *tls.Config
+
+	if useTls {
+		tlsConfig = &tls.Config{
+			InsecureSkipVerify: skipCertValidation,
+		}
+	}
+
 	cli := &logHubClient{
 		connPoolSize,
 		address,
-		make(chan chan net.Conn),
-		make(chan net.Conn),
-		make(chan net.Conn),
+		make(chan chan io.ReadWriteCloser),
+		make(chan io.ReadWriteCloser),
+		make(chan io.ReadWriteCloser),
 		make(chan chan bool),
 		new(int32),
 		new(int32),
+		tlsConfig,
 	}
 
 	go cli.connPool()
@@ -44,12 +56,20 @@ func NewClient(address string, connPoolSize int) ProtocolHandler {
 	return cli
 }
 
+func (cli *logHubClient) newConnection() (io.ReadWriteCloser, error) {
+	if cli.tlsConfig == nil {
+		return net.Dial("tcp", cli.address)
+	} else {
+		return tls.Dial("tcp", cli.address, cli.tlsConfig)
+	}
+}
+
 func (cli *logHubClient) connPool() {
 	connections := list.New()
 	waiters := list.New()
 	totalConnections := 0
 
-	if conn, err := net.Dial("tcp", cli.address); err == nil {
+	if conn, err := cli.newConnection(); err == nil {
 		connections.PushBack(conn)
 		totalConnections++
 	} else {
@@ -61,10 +81,10 @@ func (cli *logHubClient) connPool() {
 		case connChan, ok := <-cli.getConnChan:
 			if ok {
 				if connections.Len() > 0 {
-					connChan <- connections.Remove(connections.Front()).(net.Conn)
+					connChan <- connections.Remove(connections.Front()).(io.ReadWriteCloser)
 				} else {
 					if totalConnections < cli.connPoolSize {
-						if conn, err := net.Dial("tcp", cli.address); err == nil {
+						if conn, err := cli.newConnection(); err == nil {
 							connChan <- conn
 							totalConnections++
 						} else {
@@ -81,7 +101,7 @@ func (cli *logHubClient) connPool() {
 				if waiters.Len() == 0 {
 					connections.PushBack(conn)
 				} else {
-					connChan := waiters.Remove(waiters.Front()).(chan net.Conn)
+					connChan := waiters.Remove(waiters.Front()).(chan io.ReadWriteCloser)
 					connChan <- conn
 				}
 			}
@@ -104,7 +124,7 @@ func (cli *logHubClient) connPool() {
 			}
 
 			for conn := connections.Front(); conn != nil; conn = conn.Next() {
-				conn.Value.(net.Conn).Close()
+				conn.Value.(io.ReadWriteCloser).Close()
 			}
 
 			ack <- true
@@ -113,12 +133,12 @@ func (cli *logHubClient) connPool() {
 	}
 }
 
-func (cli *logHubClient) getConn() (net.Conn, bool) {
+func (cli *logHubClient) getConn() (io.ReadWriteCloser, bool) {
 	if atomic.LoadInt32(cli.isClosed) > 0 {
 		return nil, false
 	}
 
-	connChan := make(chan net.Conn)
+	connChan := make(chan io.ReadWriteCloser)
 	cli.getConnChan <- connChan
 	conn, ok := <-connChan
 
@@ -126,7 +146,7 @@ func (cli *logHubClient) getConn() (net.Conn, bool) {
 }
 
 func (cli *logHubClient) Write(cred *Credentials, entries chan *IncomingLogEntryJSON) {
-	var conn net.Conn
+	var conn io.ReadWriteCloser
 	atomic.AddInt32(cli.activeOps, 1)
 
 	if c, ok := cli.getConn(); !ok {
@@ -177,7 +197,7 @@ func (cli *logHubClient) Write(cred *Credentials, entries chan *IncomingLogEntry
 
 func (cli *logHubClient) Read(cred *Credentials, queries chan *LogQueryJSON, entries chan *OutgoingLogEntryJSON) {
 	//TODO: Get rid of duplication.
-	var conn net.Conn
+	var conn io.ReadWriteCloser
 	atomic.AddInt32(cli.activeOps, 1)
 
 	if c, ok := cli.getConn(); !ok {
@@ -251,7 +271,7 @@ func (cli *logHubClient) Read(cred *Credentials, queries chan *LogQueryJSON, ent
 
 func (cli *logHubClient) InternalRead(cred *Credentials, queries chan *LogQueryJSON, entries chan *InternalLogEntryJSON) {
 	//TODO: Get rid of duplication.
-	var conn net.Conn
+	var conn io.ReadWriteCloser
 	atomic.AddInt32(cli.activeOps, 1)
 
 	if c, ok := cli.getConn(); !ok {
@@ -324,7 +344,7 @@ func (cli *logHubClient) InternalRead(cred *Credentials, queries chan *LogQueryJ
 }
 
 func (cli *logHubClient) Truncate(cred *Credentials, cmd *TruncateJSON) {
-	var conn net.Conn
+	var conn io.ReadWriteCloser
 	atomic.AddInt32(cli.activeOps, 1)
 	defer atomic.AddInt32(cli.activeOps, -1)
 
@@ -353,7 +373,7 @@ func (cli *logHubClient) Truncate(cred *Credentials, cmd *TruncateJSON) {
 }
 
 func (cli *logHubClient) Transfer(cred *Credentials, cmd *TransferJSON) {
-	var conn net.Conn
+	var conn io.ReadWriteCloser
 	atomic.AddInt32(cli.activeOps, 1)
 	defer atomic.AddInt32(cli.activeOps, -1)
 
@@ -382,7 +402,7 @@ func (cli *logHubClient) Transfer(cred *Credentials, cmd *TransferJSON) {
 }
 
 func (cli *logHubClient) Accept(cred *Credentials, cmd *AcceptJSON, entries chan *InternalLogEntryJSON, resultChan chan *AcceptResultJSON) {
-	var conn net.Conn
+	var conn io.ReadWriteCloser
 	atomic.AddInt32(cli.activeOps, 1)
 
 	respond := func(result bool) {
@@ -458,7 +478,7 @@ func (cli *logHubClient) Accept(cred *Credentials, cmd *AcceptJSON, entries chan
 }
 
 func (cli *logHubClient) Stat(cred *Credentials, stats chan *StatJSON) {
-	var conn net.Conn
+	var conn io.ReadWriteCloser
 	atomic.AddInt32(cli.activeOps, 1)
 
 	if c, ok := cli.getConn(); !ok {

@@ -84,7 +84,7 @@ func (mh *logProtocolHandler) Transfer(cred *lhproto.Credentials, cmd *lhproto.T
 	logProtocolHanderTrace.Debugf("Got transfer of %d to %s, id %d.", cmd.Lim, cmd.Addr, cmd.Id)
 
 	lim := cmd.Lim
-	cli := lhproto.NewClient(cmd.Addr, 1)
+	cli := lhproto.NewClient(cmd.Addr, 1, false, false)
 	defer cli.Close()
 
 	for {

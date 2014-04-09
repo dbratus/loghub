@@ -21,14 +21,14 @@ func TestClientServer(t *testing.T) {
 	messageHandler := newTestProtocolHandler()
 	var closeServer func()
 
-	if c, err := startServer(serverAddress, messageHandler); err != nil {
+	if c, err := startServer(serverAddress, messageHandler, nil); err != nil {
 		t.Errorf("Failed to start LogHub server", err.Error())
 		t.FailNow()
 	} else {
 		closeServer = c
 	}
 
-	client := lhproto.NewClient(serverAddress, 1)
+	client := lhproto.NewClient(serverAddress, 1, false, false)
 
 	entriesToWrite := make(chan *lhproto.IncomingLogEntryJSON)
 	client.Write(&cred, entriesToWrite)
@@ -218,7 +218,7 @@ func TestClientWithoutServer(t *testing.T) {
 	trace.SetTraceLevel(-1)
 	defer trace.SetTraceLevel(trace.LevelError)
 
-	client := lhproto.NewClient(":9999", 1)
+	client := lhproto.NewClient(":9999", 1, false, false)
 
 	cred := lhproto.Credentials{"", ""}
 	entriesToWrite := make(chan *lhproto.IncomingLogEntryJSON)

@@ -45,20 +45,24 @@ type readLogMultiSrcCmd struct {
 }
 
 type defaultHub struct {
-	readChan     chan readLogMultiSrcCmd
-	statChan     chan setLogStatCmd
-	truncateChan chan truncateLogCmd
-	getStatsChan chan chan map[string]*LogStat
-	closeChan    chan chan bool
+	readChan           chan readLogMultiSrcCmd
+	statChan           chan setLogStatCmd
+	truncateChan       chan truncateLogCmd
+	getStatsChan       chan chan map[string]*LogStat
+	closeChan          chan chan bool
+	useTls             bool
+	skipCertValidation bool
 }
 
-func NewDefaultHub() Hub {
+func NewDefaultHub(useTls bool, skipCertValidation bool) Hub {
 	h := &defaultHub{
 		make(chan readLogMultiSrcCmd),
 		make(chan setLogStatCmd),
 		make(chan truncateLogCmd),
 		make(chan chan map[string]*LogStat),
 		make(chan chan bool),
+		useTls,
+		skipCertValidation,
 	}
 
 	go h.run()
@@ -147,7 +151,7 @@ func (h *defaultHub) run() {
 
 			logs[addr] = &logInfo{
 				cmd.stat,
-				lhproto.NewClient(addr, maxConnectionsPerClient),
+				lhproto.NewClient(addr, maxConnectionsPerClient, h.useTls, h.skipCertValidation),
 				time.Now().Add(logCloseTimeout),
 				new(int32),
 				cmd.stat.LastTransferId,

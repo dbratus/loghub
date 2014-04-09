@@ -14,7 +14,7 @@ import (
 )
 
 func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testProtocolHandler)) {
-	hub := NewDefaultHub()
+	hub := NewDefaultHub(false, false)
 	defer hub.Close()
 
 	closeFuncs := make([]func(), 0, logsCount)
@@ -27,7 +27,7 @@ func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testProtocolHandl
 
 		protocolHandlers = append(protocolHandlers, protocolHandler)
 
-		if c, err := startServer(serverAddress, protocolHandler); err != nil {
+		if c, err := startServer(serverAddress, protocolHandler, nil); err != nil {
 			t.Errorf("Failed to start LogHub server %s.", err.Error())
 			t.FailNow()
 		} else {
@@ -45,7 +45,7 @@ func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testProtocolHandl
 		<-time.After(time.Millisecond * 100)
 	}(closeFuncs)
 
-	test(hub, protocolHandlers)	
+	test(hub, protocolHandlers)
 }
 
 func TestHubSetStatRead(t *testing.T) {

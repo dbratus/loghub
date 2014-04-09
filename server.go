@@ -6,16 +6,34 @@
 package main
 
 import (
+	"crypto/tls"
 	"github.com/dbratus/loghub/jstream"
 	"github.com/dbratus/loghub/lhproto"
+	"io"
 	"net"
 )
 
-func startServer(address string, handler lhproto.ProtocolHandler) (func(), error) {
+func startServer(address string, handler lhproto.ProtocolHandler, cert *tls.Certificate) (func(), error) {
 	if listener, err := net.Listen("tcp", address); err == nil {
 		go func() {
+			var tlsConfig *tls.Config
+
+			if cert != nil {
+				certs := [...]tls.Certificate{*cert}
+
+				tlsConfig = &tls.Config{
+					Certificates: certs[:],
+				}
+			}
+
 			for {
-				if conn, err := listener.Accept(); err == nil {
+				if plainConn, err := listener.Accept(); err == nil {
+					var conn io.ReadWriteCloser = plainConn
+
+					if tlsConfig != nil {
+						conn = tls.Server(plainConn, tlsConfig)
+					}
+
 					go handleConnection(conn, handler)
 				} else {
 					break
@@ -33,7 +51,7 @@ func startServer(address string, handler lhproto.ProtocolHandler) (func(), error
 	}
 }
 
-func handleConnection(conn net.Conn, handler lhproto.ProtocolHandler) {
+func handleConnection(conn io.ReadWriteCloser, handler lhproto.ProtocolHandler) {
 	reader := jstream.NewReader(conn)
 	writer := jstream.NewWriter(conn)
 

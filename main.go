@@ -7,6 +7,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -63,6 +64,8 @@ func logCommand(args []string) {
 	hub := flags.String("hub", "", "Hub address.")
 	lim := flags.Int64("lim", 1024, "Log size limit in megabytes.")
 	statInerval := flags.Duration("stat", time.Second*10, "Status sending interval.")
+	certFile := flags.String("cert", "", "TLS certificate PEM file.")
+	keyFile := flags.String("key", "", "Private key PEM file.")
 	debug := flags.Bool("debug", false, "Write debug information.")
 
 	flags.Parse(args)
@@ -95,6 +98,17 @@ func logCommand(args []string) {
 		port = addr.Port
 	}
 
+	var cert *tls.Certificate = nil
+
+	if *certFile != "" && *keyFile != "" {
+		if c, err := tls.LoadX509KeyPair(*certFile, *keyFile); err != nil {
+			println("Failed to load CA certificate:", err.Error())
+			os.Exit(1)
+		} else {
+			cert = &c
+		}
+	}
+
 	logManager := NewDefaultLogManager(*home)
 
 	var stopLogStatSender func()
@@ -111,7 +125,7 @@ func logCommand(args []string) {
 
 	var stopServer func()
 
-	if s, err := startServer(*address, NewLogProtocolHandler(logManager, lastTransferId, limBytes)); err != nil {
+	if s, err := startServer(*address, NewLogProtocolHandler(logManager, lastTransferId, limBytes), cert); err != nil {
 		println("Failed to start the server:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -132,6 +146,10 @@ func hubCommand(args []string) {
 	flags := flag.NewFlagSet("hub", flag.ExitOnError)
 	statAddress := flags.String("stat", ":9999", "Address and port to collect stat.")
 	address := flags.String("listen", ":10000", "Address and port to listen.")
+	certFile := flags.String("cert", "", "TLS certificate PEM file.")
+	keyFile := flags.String("key", "", "Private key PEM file.")
+	useTls := flags.Bool("tls", false, "Whether to use TLS protocol to connect logs.")
+	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 	debug := flags.Bool("debug", false, "Write debug information.")
 
 	flags.Parse(args)
@@ -140,7 +158,18 @@ func hubCommand(args []string) {
 		trace.SetTraceLevel(trace.LevelDebug)
 	}
 
-	hub := NewDefaultHub()
+	var cert *tls.Certificate = nil
+
+	if *certFile != "" && *keyFile != "" {
+		if c, err := tls.LoadX509KeyPair(*certFile, *keyFile); err != nil {
+			println("Failed to load CA certificate:", err.Error())
+			os.Exit(1)
+		} else {
+			cert = &c
+		}
+	}
+
+	hub := NewDefaultHub(*useTls, *trust)
 
 	var stopLogStatReceiver func()
 
@@ -153,7 +182,7 @@ func hubCommand(args []string) {
 
 	var stopServer func()
 
-	if s, err := startServer(*address, NewHubProtocolHandler(hub)); err != nil {
+	if s, err := startServer(*address, NewHubProtocolHandler(hub), cert); err != nil {
 		println("Failed to start the server:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -182,6 +211,8 @@ func getCommand(args []string) {
 	tsfmt := flags.String("tsfmt", "2006-01-02 15:04:05", "Timestamp format.")
 	isUtc := flags.Bool("utc", false, "Return UTC timestamps.")
 	user := flags.String("u", "", "User name.")
+	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
 	flags.Parse(args)
 
@@ -222,7 +253,7 @@ func getCommand(args []string) {
 
 	cred := lhproto.Credentials{*user, password}
 
-	client := lhproto.NewClient(*addr, 1)
+	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
 	defer client.Close()
 
 	queries := make(chan *lhproto.LogQueryJSON)
@@ -276,6 +307,8 @@ func putCommand(args []string) {
 	flags := flag.NewFlagSet("put", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of log.")
 	user := flags.String("u", "", "User name.")
+	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
 	flags.Parse(args)
 
@@ -285,7 +318,7 @@ func putCommand(args []string) {
 	}
 
 	input := bufio.NewReader(os.Stdin)
-	client := lhproto.NewClient(*addr, 1)
+	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
 	entChan := make(chan *lhproto.IncomingLogEntryJSON)
 
 	password := ""
@@ -327,6 +360,8 @@ func truncateCommand(args []string) {
 	src := flags.String("src", "", "Comma separated list of log sources.")
 	lim := flags.Duration("lim", 0, "The limit of the truncation.")
 	user := flags.String("u", "", "User name.")
+	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
 	flags.Parse(args)
 
@@ -349,7 +384,7 @@ func truncateCommand(args []string) {
 
 	cred := lhproto.Credentials{*user, password}
 
-	client := lhproto.NewClient(*addr, 1)
+	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
 	defer client.Close()
 
 	if *src == "" {
@@ -371,6 +406,8 @@ func statCommand(args []string) {
 	flags := flag.NewFlagSet("stat", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
 	user := flags.String("u", "", "User name.")
+	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
 	flags.Parse(args)
 
@@ -388,7 +425,7 @@ func statCommand(args []string) {
 
 	cred := lhproto.Credentials{*user, password}
 
-	client := lhproto.NewClient(*addr, 1)
+	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
 	defer client.Close()
 
 	stats := make(chan *lhproto.StatJSON)

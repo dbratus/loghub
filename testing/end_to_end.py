@@ -12,7 +12,10 @@ STAT_PORT = 9999
 #Starting hub.
 hub_proc = subprocess.Popen([
 	'loghub', 'hub', 
-	'-debug',
+	#'-debug',
+	'-cert', 'cert.pem',
+	'-key', 'testkey.pem',
+	'-tls', '-trust',
 	'-listen', ':' + str(BASE_PORT), 
 	'-stat', ':' + str(STAT_PORT)])
 
@@ -23,9 +26,11 @@ log_lim = 1
 for i in range(1, LOGS_COUNT+1):
 	log_proc = subprocess.Popen([
 		'loghub', 'log', 
-		'-debug',
+		#'-debug',
 		'-listen', ':' + str(BASE_PORT + i), 
 		'-home', LOG_BASE + 'log' + str(i),
+		'-cert', 'cert.pem',
+		'-key', 'testkey.pem',
 		'-hub', ':' + str(STAT_PORT),
 		'-lim', str(log_lim)])
 
@@ -33,7 +38,10 @@ for i in range(1, LOGS_COUNT+1):
 	log_lim *= 2
 
 def write_some_log(log_proc_num, min_cnt, max_cnt):
-	writer_proc = subprocess.Popen(['loghub', 'put', '-addr', ':' + str(BASE_PORT + log_proc_num)], stdin=subprocess.PIPE)
+	writer_proc = subprocess.Popen([
+		'loghub', 'put', 
+		'-tls', '-trust',
+		'-addr', ':' + str(BASE_PORT + log_proc_num)], stdin=subprocess.PIPE)
 
 	for i in range(0, random.randint(min_cnt, max_cnt)):
 		msg = io.StringIO()
@@ -56,17 +64,22 @@ def write_some_log(log_proc_num, min_cnt, max_cnt):
 	writer_proc.wait()
 
 try:
-	while True:
-		#Write some logs.
-		for i in range(1, len(log_procs) + 1):
-			write_some_log(i, 1, 10000)
+	#Waiting for input.
+	if sys.stdin.readline()  != 'q\n':
+		while True:
+			#Write some logs.
+			for i in range(1, len(log_procs) + 1):
+				write_some_log(i, 1, 10000)
 
-		#Getting stats.
-		subprocess.call(['loghub', 'stat', '-addr', ':' + str(BASE_PORT)])
+			#Getting stats.
+			subprocess.call([
+				'loghub', 'stat', 
+				'-tls', '-trust',
+				'-addr', ':' + str(BASE_PORT)])
 
-		#Waiting for input.
-		if sys.stdin.readline()  == 'q\n':
-			break
+			#Waiting for input.
+			if sys.stdin.readline()  == 'q\n':
+				break
 finally:
 	#Terminating hub.
 	hub_proc.terminate()
