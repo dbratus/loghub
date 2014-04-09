@@ -7,16 +7,22 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"testing"
 )
 
 func TestWriteCloseWriteReadLogFile(t *testing.T) {
-	testLogFilePath := os.TempDir() + "loghub.write-close-write-read-test.log"
-
-	//println(testLogFilePath)
-
 	var log *LogFile
+
+	makeTempDir(getTempDir("loghub.test.home"))
+	defer func() {
+		if log != nil {
+			log.Close()
+		}
+
+		rmTempDir(getTempDir("loghub.test.home"))
+	}() 
+
+	testLogFilePath := getTempDir("loghub.test.home") + "/write-close-write-read-test.log"
 
 	if l, err := OpenLogFile(testLogFilePath, true); err != nil {
 		t.Error("OpenCreateLogFile failed.", err)
@@ -29,12 +35,6 @@ func TestWriteCloseWriteReadLogFile(t *testing.T) {
 
 		log = l
 	}
-
-	cleanup := func() {
-		os.Remove(testLogFilePath)
-	}
-
-	defer cleanup()
 
 	entriesCount := 3
 
@@ -53,6 +53,7 @@ func TestWriteCloseWriteReadLogFile(t *testing.T) {
 	}
 
 	log.Close()
+	log = nil
 
 	if l, err := OpenLogFile(testLogFilePath, true); err != nil {
 		t.Error("OpenCreateLogFile failed.", err)
@@ -94,14 +95,24 @@ func TestWriteCloseWriteReadLogFile(t *testing.T) {
 		t.Errorf("%d entries read of %d expected.", cnt, entriesCount*2)
 		t.FailNow()
 	}
+
+	log.Close()
+	log = nil
 }
 
 func TestWriteReadLogFile(t *testing.T) {
-	testLogFilePath := os.TempDir() + "loghub.test.log"
-
-	//println(testLogFilePath)
-
 	var log *LogFile
+
+	makeTempDir(getTempDir("loghub.test.home"))
+	defer func() {
+		if log != nil {
+			log.Close()
+		}
+
+		rmTempDir(getTempDir("loghub.test.home"))
+	}() 
+
+	testLogFilePath := getTempDir("loghub.test.home") + "/loghub.test.log"
 
 	if l, err := OpenLogFile(testLogFilePath, true); err != nil {
 		t.Error("OpenCreateLogFile failed.", err)
@@ -114,12 +125,6 @@ func TestWriteReadLogFile(t *testing.T) {
 
 		log = l
 	}
-
-	cleanup := func() {
-		os.Remove(testLogFilePath)
-	}
-
-	defer cleanup()
 
 	fileSize := log.Size()
 
@@ -138,6 +143,7 @@ func TestWriteReadLogFile(t *testing.T) {
 	}
 
 	log.Close()
+	log = nil
 
 	if l, err := OpenLogFile(testLogFilePath, true); err != nil {
 		t.Error("OpenCreateLogFile failed.", err)
@@ -274,4 +280,5 @@ func TestWriteReadLogFile(t *testing.T) {
 	}
 
 	log.Close()
+	log = nil
 }

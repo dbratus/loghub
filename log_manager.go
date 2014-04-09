@@ -598,7 +598,7 @@ func (mg *defaultLogManager) run() {
 			logManagerTrace.Debugf("Deleting source directory %s.", srcDirName)
 
 			if err := os.RemoveAll(mg.home + "/" + srcDirName); err != nil {
-				logManagerTrace.Errorf("Failed to remove source directory: %s.", err.Error())
+				logManagerTrace.Errorf("Failed to remove source directory on truncation: %s.", err.Error())
 			}
 		}
 	}
@@ -802,11 +802,11 @@ func (mg *defaultLogManager) run() {
 					if err := os.Remove(fileName); err == nil {
 						atomic.AddInt64(closedSize, -stat.Size())
 					} else {
-						logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
+						logManagerTrace.Errorf("Failed to remove log file on transfer chunk deletion: %s.", err.Error())
 					}
 
 					if err := os.RemoveAll(dirName); err != nil {
-						logManagerTrace.Errorf("Failed to remove source directory: %s.", err.Error())
+						logManagerTrace.Errorf("Failed to remove source directory on transfer chunk deletion: %s.", err.Error())
 					}
 
 					srcInfo.lock.Unlock(lck)

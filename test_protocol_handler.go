@@ -34,6 +34,7 @@ func newTestProtocolHandler() *testProtocolHandler {
 
 	for i := 0; i < testLogEntriesCount; i++ {
 		m := &lhproto.OutgoingLogEntryJSON{lhproto.IncomingLogEntryJSON{1, "Source", "Message"}, timeToTimestamp(time.Now())}
+		<- time.After(time.Millisecond * 3)
 
 		outgoingEntriesToRead = append(outgoingEntriesToRead, m)
 	}
@@ -42,6 +43,7 @@ func newTestProtocolHandler() *testProtocolHandler {
 
 	for i := 0; i < testLogEntriesCount; i++ {
 		m := &lhproto.InternalLogEntryJSON{1, "Source", EncodingPlain, "Message", timeToTimestamp(time.Now())}
+		<- time.After(time.Millisecond * 3)
 
 		internalEntriesToRead = append(internalEntriesToRead, m)
 	}

@@ -7,51 +7,29 @@ package main
 
 import (
 	//"github.com/dbratus/loghub/trace"
-	"os"
 	"testing"
 	"time"
 )
 
-func getTestLogHome() string {
-	return os.TempDir() + "loghub.test.home"
-}
-
-func getAltTestLogHome() string {
-	return os.TempDir() + "loghub.test.home.alt"
-}
-
-func makeTestLogHome(homePath string) {
-	if stat, err := os.Stat(homePath); err != nil {
-		if os.IsNotExist(err) {
-			if e := os.Mkdir(homePath, 0777); e != nil {
-				panic(e.Error())
-			}
-		} else {
-			panic(err.Error())
-		}
-	} else if !stat.IsDir() {
-		panic(homePath + " already exists and its not a directory.")
-	} else {
-		os.RemoveAll(homePath)
-
-		if e := os.Mkdir(homePath, 0777); e != nil {
-			panic(e.Error())
-		}
-	}
-}
-
-func deleteTestLogHome(homePath string) {
-	os.RemoveAll(homePath)
-}
-
 func TestWriteReadLog(t *testing.T) {
-	makeTestLogHome(getTestLogHome())
-	defer deleteTestLogHome(getTestLogHome())
+	//trace.SetTraceLevel(trace.LevelDebug)
+	//defer trace.SetTraceLevel(trace.LevelInfo)
+
+	var logManager LogManager
+
+	makeTempDir(getTempDir("loghub.test.home"))
+	defer func() {
+		if logManager != nil {
+			logManager.Close()
+		}
+
+		rmTempDir(getTempDir("loghub.test.home"))
+	}() 
 
 	sources := [...]string{"src1", "src2", "src3"}
 
 	entriesPerSource := 10
-	logManager := NewDefaultLogManager(getTestLogHome())
+	logManager = NewDefaultLogManager(getTempDir("loghub.test.home"))
 	initialLogSize := logManager.Size()
 
 	beforeWrite := time.Now()
@@ -61,6 +39,7 @@ func TestWriteReadLog(t *testing.T) {
 			ent := &LogEntry{0, 1, src, EncodingPlain, []byte("Message")}
 
 			logManager.WriteLog(ent)
+			<- time.After(time.Millisecond * 3)
 		}
 	}
 
@@ -72,12 +51,14 @@ func TestWriteReadLog(t *testing.T) {
 	}
 
 	logManager.Close()
+	logManager = nil
 
 	afterWrite := time.Now()
 
-	logManager = NewDefaultLogManager(getTestLogHome())
+	logManager = NewDefaultLogManager(getTempDir("loghub.test.home"))
 
 	qResult := make(chan *LogEntry)
+
 	logManager.ReadLog(&LogQuery{timeToTimestamp(beforeWrite), timeToTimestamp(afterWrite), 1, 1, "src."}, qResult)
 	entCnt := 0
 
@@ -86,7 +67,7 @@ func TestWriteReadLog(t *testing.T) {
 	}
 
 	if entCnt < entriesPerSource*3 {
-		t.Errorf("Failed to read entries from log manager: expected %d, got %d.", entriesPerSource, entCnt)
+		t.Errorf("Failed to read entries from log manager: expected %d, got %d.", entriesPerSource*3, entCnt)
 		t.FailNow()
 	}
 
@@ -102,6 +83,7 @@ func TestWriteReadLog(t *testing.T) {
 			ent := &LogEntry{0, 1, src, EncodingPlain, []byte("Message")}
 
 			logManager.WriteLog(ent)
+			<- time.After(time.Millisecond * 3)
 		}
 	}
 
@@ -111,10 +93,11 @@ func TestWriteReadLog(t *testing.T) {
 	}
 
 	logManager.Close()
+	logManager = nil
 
 	afterWrite = time.Now()
 
-	logManager = NewDefaultLogManager(getTestLogHome())
+	logManager = NewDefaultLogManager(getTempDir("loghub.test.home"))
 	qResult = make(chan *LogEntry)
 	logManager.ReadLog(&LogQuery{timeToTimestamp(beforeWrite), timeToTimestamp(afterWrite), 1, 1, "src."}, qResult)
 	entCnt = 0
@@ -129,21 +112,26 @@ func TestWriteReadLog(t *testing.T) {
 	}
 
 	logManager.Close()
+	logManager = nil
 }
 
 func TestTruncate(t *testing.T) {
 	//trace.SetTraceLevel(trace.LevelDebug)
 	//defer trace.SetTraceLevel(trace.LevelInfo)
 
-	makeTestLogHome(getTestLogHome())
-	defer deleteTestLogHome(getTestLogHome())
+	var logManager LogManager
 
-	//sources := [...]string{"src1", "src2", "src3"}
+	makeTempDir(getTempDir("loghub.test.home"))
+	defer func() {
+		logManager.Close()
+
+		rmTempDir(getTempDir("loghub.test.home"))
+	}()
+
 	sources := [...]string{"src1"}
 
 	entriesPerSource := 32
-	logManager := NewDefaultLogManager(getTestLogHome())
-	defer logManager.Close()
+	logManager = NewDefaultLogManager(getTempDir("loghub.test.home"))
 
 	baseTs := time.Now().Truncate(time.Hour)
 
@@ -213,19 +201,24 @@ func TestTransfer(t *testing.T) {
 	//trace.SetTraceLevel(trace.LevelDebug)
 	//defer trace.SetTraceLevel(trace.LevelInfo)
 
-	makeTestLogHome(getTestLogHome())
-	defer deleteTestLogHome(getTestLogHome())
-	makeTestLogHome(getAltTestLogHome())
-	defer deleteTestLogHome(getAltTestLogHome())
+	var logManager, logManagerAlt LogManager
+
+	makeTempDir(getTempDir("loghub.test.home"))
+	makeTempDir(getTempDir("loghub.test.alt.home"))
+
+	defer func() {
+		logManager.Close()
+		logManagerAlt.Close()
+
+		rmTempDir(getTempDir("loghub.test.home"))
+		rmTempDir(getTempDir("loghub.test.alt.home"))
+	}()
 
 	sources := [...]string{"src1", "src2", "src3"}
 
 	entriesPerSource := 10
-	logManager := NewDefaultLogManager(getTestLogHome())
-	logManagerAlt := NewDefaultLogManager(getAltTestLogHome())
-
-	defer logManager.Close()
-	defer logManagerAlt.Close()
+	logManager = NewDefaultLogManager(getTempDir("loghub.test.home"))
+	logManagerAlt = NewDefaultLogManager(getTempDir("loghub.test.alt.home"))
 
 	nHours := 3
 	thisHour := time.Now().Truncate(time.Hour)
