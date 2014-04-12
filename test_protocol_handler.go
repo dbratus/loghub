@@ -26,6 +26,7 @@ type testProtocolHandler struct {
 	transfers             chan *lhproto.TransferJSON
 	accepts               chan *lhproto.AcceptJSON
 	entriesAccepted       chan *lhproto.InternalLogEntryJSON
+	users                 chan *lhproto.UserInfoJSON
 	isClosed              *int32
 }
 
@@ -34,7 +35,7 @@ func newTestProtocolHandler() *testProtocolHandler {
 
 	for i := 0; i < testLogEntriesCount; i++ {
 		m := &lhproto.OutgoingLogEntryJSON{lhproto.IncomingLogEntryJSON{1, "Source", "Message"}, timeToTimestamp(time.Now())}
-		<- time.After(time.Millisecond * 3)
+		<-time.After(time.Millisecond * 3)
 
 		outgoingEntriesToRead = append(outgoingEntriesToRead, m)
 	}
@@ -43,7 +44,7 @@ func newTestProtocolHandler() *testProtocolHandler {
 
 	for i := 0; i < testLogEntriesCount; i++ {
 		m := &lhproto.InternalLogEntryJSON{1, "Source", EncodingPlain, "Message", timeToTimestamp(time.Now())}
-		<- time.After(time.Millisecond * 3)
+		<-time.After(time.Millisecond * 3)
 
 		internalEntriesToRead = append(internalEntriesToRead, m)
 	}
@@ -56,6 +57,7 @@ func newTestProtocolHandler() *testProtocolHandler {
 		make(chan *lhproto.TransferJSON),
 		make(chan *lhproto.AcceptJSON),
 		make(chan *lhproto.InternalLogEntryJSON),
+		make(chan *lhproto.UserInfoJSON),
 		new(int32),
 	}
 }
@@ -118,6 +120,12 @@ func (mh *testProtocolHandler) Stat(cred *lhproto.Credentials, stats chan *lhpro
 	stats <- &lhproto.StatJSON{"127.0.0.1:10001", 1024, 1024 * 1024}
 	stats <- &lhproto.StatJSON{"127.0.0.1:10002", 1024, 1024 * 1024}
 	close(stats)
+}
+
+func (mh *testProtocolHandler) User(cred *lhproto.Credentials, usr *lhproto.UserInfoJSON) {
+	if !mh.IsClosed() {
+		mh.users <- usr
+	}
 }
 
 func (mh *testProtocolHandler) Close() {

@@ -155,6 +155,41 @@ func TestClientServer(t *testing.T) {
 		}
 	}
 
+	userRoles := [...]string{"role1", "role2"}
+	userCmd := lhproto.UserInfoJSON{"username", "password", true, userRoles[:], true}
+	client.User(&cred, &userCmd)
+
+	select {
+	case cmd := <-messageHandler.users:
+		if cmd.Name != userCmd.Name {
+			t.Error("Name doesn't match.")
+			t.FailNow()
+		}
+
+		if cmd.Password != userCmd.Password {
+			t.Error("Password doesn't match.")
+			t.FailNow()
+		}
+
+		if cmd.SetPassword != userCmd.SetPassword {
+			t.Error("SetPassword doesn't match.")
+			t.FailNow()
+		}
+
+		if len(cmd.Roles) != len(userCmd.Roles) || cmd.Roles[0] != userCmd.Roles[0] || cmd.Roles[1] != userCmd.Roles[1] {
+			t.Error("Roles doesn't match.")
+			t.FailNow()
+		}
+
+		if cmd.Delete != userCmd.Delete {
+			t.Error("Delete doesn't match.")
+			t.FailNow()
+		}
+	case <-time.After(time.Second * 10):
+		t.Error("User has not arrived.")
+		t.FailNow()
+	}
+
 	queries := make(chan *lhproto.LogQueryJSON)
 	result := make(chan *lhproto.OutgoingLogEntryJSON)
 

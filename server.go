@@ -217,6 +217,17 @@ func handleConnection(conn io.ReadWriteCloser, handler lhproto.ProtocolHandler) 
 			if continueWriting {
 				writer.WriteDelimiter()
 			}
+
+		case lhproto.ActionUser:
+			var cmd lhproto.UserInfoJSON
+
+			if err := reader.ReadJSON(&cmd); err != nil {
+				conn.Close()
+				return
+			}
+
+			go handler.User(&cred, &cmd)
+
 		}
 	}
 }

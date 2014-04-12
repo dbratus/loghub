@@ -62,6 +62,9 @@ const (
 	//The body is a sequence of StatJSON terminated by \0.
 	//<StatJSON>\0<StatJSON>\0...\0<StatJSON>\0\0
 	ActionStat = "stat"
+
+	//The body is \0 terminated UserInfoJSON.
+	ActionUser = "user"
 )
 
 //The message header that each message starts with.
@@ -152,6 +155,15 @@ type StatJSON struct {
 	Lim  int64
 }
 
+//The user data.
+type UserInfoJSON struct {
+	Name        string
+	Password    string
+	SetPassword bool
+	Roles       []string
+	Delete      bool
+}
+
 //User credentials.
 type Credentials struct {
 	User     string
@@ -167,5 +179,6 @@ type ProtocolHandler interface {
 	Transfer(*Credentials, *TransferJSON)
 	Accept(*Credentials, *AcceptJSON, chan *InternalLogEntryJSON, chan *AcceptResultJSON)
 	Stat(*Credentials, chan *StatJSON)
+	User(*Credentials, *UserInfoJSON)
 	Close()
 }

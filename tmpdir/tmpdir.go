@@ -3,16 +3,16 @@
 // The use of this source code is governed by the license
 // that can be found in the LICENSE file.package main
 
-package main
+package tmpdir
 
 import (
-	"os"
 	"github.com/dbratus/loghub/trace"
+	"os"
 )
 
 var tmpDirTrace = trace.New("TempDir")
 
-func getTempDir(name string) string {
+func GetPath(name string) string {
 	tmpDir := os.TempDir()
 
 	if tmpDir[len(tmpDir)-1:] != "/" {
@@ -22,7 +22,7 @@ func getTempDir(name string) string {
 	return tmpDir + name
 }
 
-func makeTempDir(path string) {
+func Make(path string) {
 	if stat, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			if e := os.Mkdir(path, 0777); e != nil {
@@ -44,7 +44,7 @@ func makeTempDir(path string) {
 	}
 }
 
-func rmTempDir(path string) {
+func Rm(path string) {
 	if err := os.RemoveAll(path); err != nil {
 		tmpDirTrace.Error(err.Error())
 	}

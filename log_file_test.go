@@ -7,22 +7,25 @@ package main
 
 import (
 	"fmt"
+	"github.com/dbratus/loghub/tmpdir"
 	"testing"
 )
 
 func TestWriteCloseWriteReadLogFile(t *testing.T) {
 	var log *LogFile
 
-	makeTempDir(getTempDir("loghub.test.home"))
+	home := tmpdir.GetPath("loghub.test.home")
+
+	tmpdir.Make(home)
 	defer func() {
 		if log != nil {
 			log.Close()
 		}
 
-		rmTempDir(getTempDir("loghub.test.home"))
-	}() 
+		tmpdir.Rm(home)
+	}()
 
-	testLogFilePath := getTempDir("loghub.test.home") + "/write-close-write-read-test.log"
+	testLogFilePath := home + "/write-close-write-read-test.log"
 
 	if l, err := OpenLogFile(testLogFilePath, true); err != nil {
 		t.Error("OpenCreateLogFile failed.", err)
@@ -103,16 +106,17 @@ func TestWriteCloseWriteReadLogFile(t *testing.T) {
 func TestWriteReadLogFile(t *testing.T) {
 	var log *LogFile
 
-	makeTempDir(getTempDir("loghub.test.home"))
+	home := tmpdir.GetPath("loghub.test.home")
+	tmpdir.Make(home)
 	defer func() {
 		if log != nil {
 			log.Close()
 		}
 
-		rmTempDir(getTempDir("loghub.test.home"))
-	}() 
+		tmpdir.Rm(home)
+	}()
 
-	testLogFilePath := getTempDir("loghub.test.home") + "/loghub.test.log"
+	testLogFilePath := home + "/loghub.test.log"
 
 	if l, err := OpenLogFile(testLogFilePath, true); err != nil {
 		t.Error("OpenCreateLogFile failed.", err)

@@ -529,6 +529,33 @@ func (cli *logHubClient) Stat(cred *Credentials, stats chan *StatJSON) {
 	}()
 }
 
+func (cli *logHubClient) User(cred *Credentials, usr *UserInfoJSON) {
+	var conn io.ReadWriteCloser
+
+	if c, ok := cli.getConn(); !ok {
+		return
+	} else {
+		conn = c
+	}
+
+	writer := jstream.NewWriter(conn)
+
+	header := MessageHeaderJSON{ActionUser, cred.User, cred.Password}
+	if err := writer.WriteJSON(&header); err != nil {
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
+		cli.brokenConnChan <- conn
+		return
+	}
+
+	if err := writer.WriteJSON(&usr); err != nil {
+		clientTrace.Errorf("Failed to write message: %s.", err.Error())
+		cli.brokenConnChan <- conn
+		return
+	}
+
+	cli.putConnChan <- conn
+}
+
 func (cli *logHubClient) Close() {
 	atomic.AddInt32(cli.isClosed, 1)
 

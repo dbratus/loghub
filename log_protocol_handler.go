@@ -167,6 +167,10 @@ func (mh *logProtocolHandler) Stat(cred *lhproto.Credentials, stats chan *lhprot
 	close(stats)
 }
 
+func (mh *logProtocolHandler) User(cred *lhproto.Credentials, usr *lhproto.UserInfoJSON) {
+
+}
+
 func (mh *logProtocolHandler) Close() {
 	mh.logManager.Close()
 }

@@ -87,6 +87,10 @@ func (mh *hubProtocolHandler) Stat(cred *lhproto.Credentials, stats chan *lhprot
 	close(stats)
 }
 
+func (mh *hubProtocolHandler) User(cred *lhproto.Credentials, usr *lhproto.UserInfoJSON) {
+
+}
+
 func (mh *hubProtocolHandler) Close() {
 	mh.hub.Close()
 }
