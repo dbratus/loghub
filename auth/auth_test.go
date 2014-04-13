@@ -12,18 +12,18 @@ import (
 )
 
 var actionsAllowed = map[string]string{
-	"reader": "read",
-	"writer": "write",
-	"hub":    "read,iread,transfer,accept",
-	"admin":  "read,truncate,stat,user",
+	"reader": "read,pass",
+	"writer": "write,pass",
+	"hub":    "read,iread,transfer,accept,truncate,stat,user,pass",
+	"admin":  "read,truncate,stat,user,pass",
 }
 
 var actionsDenied = map[string]string{
-	"reader": "write,iread,transfer,accept,truncate,stat,user",
-	"writer": "read,iread,transfer,accept,truncate,stat,user",
-	"hub":    "write,truncate,stat,user",
-	"admin":  "write,iread,transfer,accept",
-	"anon":   "read,write,iread,transfer,accept,truncate,stat,user",
+	"reader":  "write,iread,transfer,accept,truncate,stat,user",
+	"writer":  "read,iread,transfer,accept,truncate,stat,user",
+	"hub":     "write",
+	"admin":   "write,iread,transfer,accept",
+	Anonimous: "read,write,iread,transfer,accept,truncate,stat,user,pass",
 }
 
 func setupPermissions(perms *Permissions) {
@@ -31,8 +31,6 @@ func setupPermissions(perms *Permissions) {
 	writer := [...]string{"writer"}
 	hub := [...]string{"hub"}
 	admin := [...]string{"admin"}
-
-	perms.SetPassword("anon", "")
 
 	perms.SetPassword("reader", "reader_password")
 	perms.SetRoles("reader", reader[:])
@@ -74,17 +72,18 @@ func TestAuthenticationAuthorization(t *testing.T) {
 	checkPermissions(perms, "writer", "writer_password", false, actionsDenied["writer"], t)
 	checkPermissions(perms, "hub", "hub_password", false, actionsDenied["hub"], t)
 	checkPermissions(perms, "admin", "admin_password", false, actionsDenied["admin"], t)
-	checkPermissions(perms, "anon", "admin_password", false, actionsDenied["anon"], t)
+	checkPermissions(perms, Anonimous, "", false, actionsDenied[Anonimous], t)
 
 	perms.DeleteUser("reader")
 	perms.DeleteUser("writer")
-	perms.DeleteUser("hub")
-	perms.DeleteUser("admin")
 
 	checkPermissions(perms, "reader", "reader_password", false, actionsAllowed["reader"], t)
 	checkPermissions(perms, "writer", "writer_password", false, actionsAllowed["writer"], t)
-	checkPermissions(perms, "hub", "hub_password", false, actionsAllowed["hub"], t)
-	checkPermissions(perms, "admin", "admin_password", false, actionsAllowed["admin"], t)
+
+	anonPerms := [...]string{"writer"}
+	perms.SetRoles(Anonimous, anonPerms[:])
+
+	checkPermissions(perms, Anonimous, "", true, "write", t)
 }
 
 func TestLoadSave(t *testing.T) {

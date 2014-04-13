@@ -21,7 +21,7 @@ func TestClientServer(t *testing.T) {
 	messageHandler := newTestProtocolHandler()
 	var closeServer func()
 
-	if c, err := startServer(serverAddress, messageHandler, nil); err != nil {
+	if c, err := startServer(serverAddress, messageHandler, nil, ""); err != nil {
 		t.Errorf("Failed to start LogHub server", err.Error())
 		t.FailNow()
 	} else {
@@ -185,6 +185,21 @@ func TestClientServer(t *testing.T) {
 			t.Error("Delete doesn't match.")
 			t.FailNow()
 		}
+	case <-time.After(time.Second * 10):
+		t.Error("User has not arrived.")
+		t.FailNow()
+	}
+
+	newPass := lhproto.PasswordJSON{"password"}
+	client.Password(&cred, &newPass)
+
+	select {
+	case pass := <-messageHandler.passwords:
+		if pass.Password != newPass.Password {
+			t.Error("Password doesn't match.")
+			t.FailNow()
+		}
+
 	case <-time.After(time.Second * 10):
 		t.Error("User has not arrived.")
 		t.FailNow()

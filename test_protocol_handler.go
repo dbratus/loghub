@@ -27,6 +27,7 @@ type testProtocolHandler struct {
 	accepts               chan *lhproto.AcceptJSON
 	entriesAccepted       chan *lhproto.InternalLogEntryJSON
 	users                 chan *lhproto.UserInfoJSON
+	passwords             chan *lhproto.PasswordJSON
 	isClosed              *int32
 }
 
@@ -58,6 +59,7 @@ func newTestProtocolHandler() *testProtocolHandler {
 		make(chan *lhproto.AcceptJSON),
 		make(chan *lhproto.InternalLogEntryJSON),
 		make(chan *lhproto.UserInfoJSON),
+		make(chan *lhproto.PasswordJSON),
 		new(int32),
 	}
 }
@@ -125,6 +127,12 @@ func (mh *testProtocolHandler) Stat(cred *lhproto.Credentials, stats chan *lhpro
 func (mh *testProtocolHandler) User(cred *lhproto.Credentials, usr *lhproto.UserInfoJSON) {
 	if !mh.IsClosed() {
 		mh.users <- usr
+	}
+}
+
+func (mh *testProtocolHandler) Password(cred *lhproto.Credentials, pass *lhproto.PasswordJSON) {
+	if !mh.IsClosed() {
+		mh.passwords <- pass
 	}
 }
 

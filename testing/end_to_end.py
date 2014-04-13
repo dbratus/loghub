@@ -13,6 +13,7 @@ STAT_PORT = 9999
 hub_proc = subprocess.Popen([
 	'loghub', 'hub', 
 	#'-debug',
+	'-home', LOG_BASE + 'hub',
 	'-cert', 'cert.pem',
 	'-key', 'testkey.pem',
 	'-tls', '-trust',
@@ -65,7 +66,7 @@ def write_some_log(log_proc_num, min_cnt, max_cnt):
 
 try:
 	#Waiting for input.
-	if sys.stdin.readline()  != 'q\n':
+	if sys.stdin.readline() != 'q\n':
 		while True:
 			#Write some logs.
 			for i in range(1, len(log_procs) + 1):
@@ -75,6 +76,7 @@ try:
 			subprocess.call([
 				'loghub', 'stat', 
 				'-tls', '-trust',
+				'-u', 'admin',
 				'-addr', ':' + str(BASE_PORT)])
 
 			#Waiting for input.

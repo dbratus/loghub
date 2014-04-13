@@ -168,7 +168,9 @@ func (mh *logProtocolHandler) Stat(cred *lhproto.Credentials, stats chan *lhprot
 }
 
 func (mh *logProtocolHandler) User(cred *lhproto.Credentials, usr *lhproto.UserInfoJSON) {
+}
 
+func (mh *logProtocolHandler) Password(cred *lhproto.Credentials, pass *lhproto.PasswordJSON) {
 }
 
 func (mh *logProtocolHandler) Close() {

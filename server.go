@@ -7,13 +7,91 @@ package main
 
 import (
 	"crypto/tls"
+	"github.com/dbratus/loghub/auth"
 	"github.com/dbratus/loghub/jstream"
 	"github.com/dbratus/loghub/lhproto"
+	"github.com/dbratus/loghub/trace"
 	"io"
 	"net"
+	"sync"
 )
 
-func startServer(address string, handler lhproto.ProtocolHandler, cert *tls.Certificate) (func(), error) {
+var serverTrace = trace.New("Server")
+
+type authManager struct {
+	home  string
+	perms *auth.Permissions
+	lock  sync.RWMutex
+}
+
+func newAuthManager(home string) (*authManager, error) {
+	if perms, err := auth.LoadPermissions(home); err == nil {
+		var lock sync.RWMutex
+
+		return &authManager{
+			home,
+			perms,
+			lock,
+		}, nil
+	} else {
+		return nil, err
+	}
+}
+
+func (a *authManager) isAllowed(action, user, password string) bool {
+	a.lock.RLock()
+	defer a.lock.RUnlock()
+
+	return a.perms.IsAllowed(action, user, password)
+}
+
+func (a *authManager) updateUser(usr *lhproto.UserInfoJSON) {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+
+	if usr.Delete {
+		a.perms.DeleteUser(usr.Name)
+	} else {
+		if usr.SetPassword {
+			a.perms.SetPassword(usr.Name, usr.Password)
+		}
+
+		if usr.Roles != nil {
+			a.perms.SetRoles(usr.Name, usr.Roles)
+		}
+	}
+
+	if a.home != "" {
+		if err := a.perms.Save(a.home); err != nil {
+			serverTrace.Errorf("Failed to save permissions: %s.", err.Error())
+		}
+	}
+}
+
+func (a *authManager) updatePassword(user string, password string) {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+
+	a.perms.SetPassword(user, password)
+
+	if a.home != "" {
+		if err := a.perms.Save(a.home); err != nil {
+			serverTrace.Errorf("Failed to save permissions: %s.", err.Error())
+		}
+	}
+}
+
+func startServer(address string, handler lhproto.ProtocolHandler, cert *tls.Certificate, home string) (func(), error) {
+	var authorizer *authManager
+
+	if home != "" {
+		if a, err := newAuthManager(home); err != nil {
+			return nil, err
+		} else {
+			authorizer = a
+		}
+	}
+
 	if listener, err := net.Listen("tcp", address); err == nil {
 		go func() {
 			var tlsConfig *tls.Config
@@ -34,7 +112,7 @@ func startServer(address string, handler lhproto.ProtocolHandler, cert *tls.Cert
 						conn = tls.Server(plainConn, tlsConfig)
 					}
 
-					go handleConnection(conn, handler)
+					go handleConnection(plainConn.RemoteAddr(), conn, handler, authorizer)
 				} else {
 					break
 				}
@@ -51,7 +129,7 @@ func startServer(address string, handler lhproto.ProtocolHandler, cert *tls.Cert
 	}
 }
 
-func handleConnection(conn io.ReadWriteCloser, handler lhproto.ProtocolHandler) {
+func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.ProtocolHandler, authorizer *authManager) {
 	reader := jstream.NewReader(conn)
 	writer := jstream.NewWriter(conn)
 
@@ -60,6 +138,13 @@ func handleConnection(conn io.ReadWriteCloser, handler lhproto.ProtocolHandler) 
 		var cred lhproto.Credentials
 
 		if err := reader.ReadJSON(&header); err != nil {
+			conn.Close()
+			break
+		}
+
+		if authorizer != nil && !authorizer.isAllowed(header.Action, header.Usr, header.Pass) {
+			serverTrace.Warnf("Access denied to %s, action %s, from %s.", header.Usr, header.Action, addr.String())
+
 			conn.Close()
 			break
 		}
@@ -227,6 +312,24 @@ func handleConnection(conn io.ReadWriteCloser, handler lhproto.ProtocolHandler) 
 			}
 
 			go handler.User(&cred, &cmd)
+
+			if authorizer != nil {
+				authorizer.updateUser(&cmd)
+			}
+
+		case lhproto.ActionPassword:
+			var cmd lhproto.PasswordJSON
+
+			if err := reader.ReadJSON(&cmd); err != nil {
+				conn.Close()
+				return
+			}
+
+			go handler.Password(&cred, &cmd)
+
+			if authorizer != nil {
+				authorizer.updatePassword(cred.User, cmd.Password)
+			}
 
 		}
 	}

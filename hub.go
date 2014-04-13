@@ -30,6 +30,8 @@ type Hub interface {
 	SetLogStat(net.IP, *LogStat)
 	Truncate(string, int64)
 	GetStats() map[string]*LogStat
+	ForEachLog(func(lhproto.ProtocolHandler))
+	SetCredentials(lhproto.Credentials)
 
 	Close()
 }
@@ -49,6 +51,8 @@ type defaultHub struct {
 	statChan           chan setLogStatCmd
 	truncateChan       chan truncateLogCmd
 	getStatsChan       chan chan map[string]*LogStat
+	credChan           chan lhproto.Credentials
+	iterChan           chan func(lhproto.ProtocolHandler)
 	closeChan          chan chan bool
 	useTls             bool
 	skipCertValidation bool
@@ -60,6 +64,8 @@ func NewDefaultHub(useTls bool, skipCertValidation bool) Hub {
 		make(chan setLogStatCmd),
 		make(chan truncateLogCmd),
 		make(chan chan map[string]*LogStat),
+		make(chan lhproto.Credentials),
+		make(chan func(lhproto.ProtocolHandler)),
 		make(chan chan bool),
 		useTls,
 		skipCertValidation,
@@ -191,17 +197,19 @@ func (h *defaultHub) run() {
 	}
 
 	onRebalance := func() {
-		for _, transfer := range logBalancer.MakeTransfers() {
-			hubTrace.Debugf("Transfering %d from %s to %s, id %d.", transfer.Amount, transfer.From, transfer.To, transfer.Id)
+		if cred.User != "" {
+			for _, transfer := range logBalancer.MakeTransfers() {
+				hubTrace.Debugf("Transfering %d from %s to %s, id %d.", transfer.Amount, transfer.From, transfer.To, transfer.Id)
 
-			if log, found := logs[transfer.From]; found {
-				atomic.AddInt32(log.usersCount, 1)
+				if log, found := logs[transfer.From]; found {
+					atomic.AddInt32(log.usersCount, 1)
 
-				go func(log *logInfo, transfer *balancer.Transfer) {
-					defer atomic.AddInt32(log.usersCount, -1)
+					go func(log *logInfo, transfer *balancer.Transfer) {
+						defer atomic.AddInt32(log.usersCount, -1)
 
-					log.client.Transfer(&cred, &lhproto.TransferJSON{transfer.Id, transfer.To, transfer.Amount})
-				}(log, transfer)
+						log.client.Transfer(&cred, &lhproto.TransferJSON{transfer.Id, transfer.To, transfer.Amount})
+					}(log, transfer)
+				}
 			}
 		}
 	}
@@ -215,6 +223,18 @@ func (h *defaultHub) run() {
 
 		statsChan <- stats
 		close(statsChan)
+	}
+
+	onIter := func(iter func(lhproto.ProtocolHandler)) {
+		for _, log := range logs {
+			atomic.AddInt32(log.usersCount, 1)
+
+			go func(log *logInfo) {
+				defer atomic.AddInt32(log.usersCount, -1)
+
+				iter(log.client)
+			}(log)
+		}
 	}
 
 	for {
@@ -239,6 +259,18 @@ func (h *defaultHub) run() {
 				onGetStats(statsChan)
 			}
 
+		case newCred, ok := <-h.credChan:
+			if ok {
+				cred = newCred
+
+				hubTrace.Info("Credentials changed.")
+			}
+
+		case iter, ok := <-h.iterChan:
+			if ok {
+				onIter(iter)
+			}
+
 		case <-time.After(logTimeoutsCheckInteval):
 			onCheckTimeouts()
 
@@ -252,6 +284,10 @@ func (h *defaultHub) run() {
 
 			for statsChan := range h.getStatsChan {
 				onGetStats(statsChan)
+			}
+
+			for iter := range h.iterChan {
+				onIter(iter)
 			}
 
 			ack <- true
@@ -279,10 +315,20 @@ func (h *defaultHub) GetStats() map[string]*LogStat {
 	return <-statsChan
 }
 
+func (h *defaultHub) ForEachLog(iter func(lhproto.ProtocolHandler)) {
+	h.iterChan <- iter
+}
+
+func (h *defaultHub) SetCredentials(cred lhproto.Credentials) {
+	h.credChan <- cred
+}
+
 func (h *defaultHub) Close() {
 	close(h.readChan)
 	close(h.statChan)
 	close(h.getStatsChan)
+	close(h.credChan)
+	close(h.iterChan)
 
 	ack := make(chan bool)
 	h.closeChan <- ack

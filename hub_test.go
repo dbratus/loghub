@@ -27,7 +27,7 @@ func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testProtocolHandl
 
 		protocolHandlers = append(protocolHandlers, protocolHandler)
 
-		if c, err := startServer(serverAddress, protocolHandler, nil); err != nil {
+		if c, err := startServer(serverAddress, protocolHandler, nil, ""); err != nil {
 			t.Errorf("Failed to start LogHub server %s.", err.Error())
 			t.FailNow()
 		} else {

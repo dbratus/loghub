@@ -6,6 +6,7 @@
 package main
 
 import (
+	"github.com/dbratus/loghub/lhproto"
 	"net"
 	"testing"
 	"time"
@@ -58,6 +59,12 @@ func (h *hubForStatTest) Truncate(source string, limit int64) {
 
 func (h *hubForStatTest) GetStats() map[string]*LogStat {
 	return nil
+}
+
+func (h *hubForStatTest) ForEachLog(func(lhproto.ProtocolHandler)) {
+}
+
+func (h *hubForStatTest) SetCredentials(lhproto.Credentials) {
 }
 
 func (h *hubForStatTest) Close() {

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/dbratus/loghub/auth"
 	"github.com/dbratus/loghub/lhproto"
 	"github.com/dbratus/loghub/trace"
 	"github.com/howeyc/gopass"
@@ -31,6 +32,8 @@ var commands = map[string]func([]string){
 	"truncate": truncateCommand,
 	"stat":     statCommand,
 	"help":     helpCommand,
+	"user":     userCommand,
+	"pass":     passCommand,
 }
 
 func main() {
@@ -53,6 +56,8 @@ func printCommands() {
 	fmt.Println("  put       Puts log entries to log or hub.")
 	fmt.Println("  truncate  Truncates the log.")
 	fmt.Println("  stat      Gets stats of a log or hub.")
+	fmt.Println("  user      Manages user accounts.")
+	fmt.Println("  pass      Changes user's password.")
 	fmt.Println()
 	fmt.Println("See 'loghub help <command>' for more information on a specific command.")
 }
@@ -125,7 +130,7 @@ func logCommand(args []string) {
 
 	var stopServer func()
 
-	if s, err := startServer(*address, NewLogProtocolHandler(logManager, lastTransferId, limBytes), cert); err != nil {
+	if s, err := startServer(*address, NewLogProtocolHandler(logManager, lastTransferId, limBytes), cert, *home); err != nil {
 		println("Failed to start the server:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -146,6 +151,7 @@ func hubCommand(args []string) {
 	flags := flag.NewFlagSet("hub", flag.ExitOnError)
 	statAddress := flags.String("stat", ":9999", "Address and port to collect stat.")
 	address := flags.String("listen", ":10000", "Address and port to listen.")
+	home := flags.String("home", "", "Home directory.") //TODO: Get default from environment variable.
 	certFile := flags.String("cert", "", "TLS certificate PEM file.")
 	keyFile := flags.String("key", "", "Private key PEM file.")
 	useTls := flags.Bool("tls", false, "Whether to use TLS protocol to connect logs.")
@@ -153,6 +159,11 @@ func hubCommand(args []string) {
 	debug := flags.Bool("debug", false, "Write debug information.")
 
 	flags.Parse(args)
+
+	if *home == "" {
+		println("Home directory is not specified.")
+		os.Exit(1)
+	}
 
 	if *debug {
 		trace.SetTraceLevel(trace.LevelDebug)
@@ -182,7 +193,7 @@ func hubCommand(args []string) {
 
 	var stopServer func()
 
-	if s, err := startServer(*address, NewHubProtocolHandler(hub), cert); err != nil {
+	if s, err := startServer(*address, NewHubProtocolHandler(hub), cert, *home); err != nil {
 		println("Failed to start the server:", err.Error(), ".")
 		os.Exit(1)
 	} else {
@@ -210,7 +221,7 @@ func getCommand(args []string) {
 	format := flags.String("fmt", "%s %s %d %s", "Log entry format.")
 	tsfmt := flags.String("tsfmt", "2006-01-02 15:04:05", "Timestamp format.")
 	isUtc := flags.Bool("utc", false, "Return UTC timestamps.")
-	user := flags.String("u", "", "User name.")
+	user := flags.String("u", auth.Anonimous, "User name.")
 	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
@@ -246,7 +257,7 @@ func getCommand(args []string) {
 
 	password := ""
 
-	if *user != "" {
+	if *user != auth.Anonimous {
 		fmt.Print("Enter password:")
 		password = string(gopass.GetPasswd())
 	}
@@ -306,7 +317,7 @@ func getCommand(args []string) {
 func putCommand(args []string) {
 	flags := flag.NewFlagSet("put", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of log.")
-	user := flags.String("u", "", "User name.")
+	user := flags.String("u", auth.Anonimous, "User name.")
 	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
@@ -323,7 +334,7 @@ func putCommand(args []string) {
 
 	password := ""
 
-	if *user != "" {
+	if *user != auth.Anonimous {
 		fmt.Print("Enter password:")
 		password = string(gopass.GetPasswd())
 	}
@@ -359,7 +370,7 @@ func truncateCommand(args []string) {
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
 	src := flags.String("src", "", "Comma separated list of log sources.")
 	lim := flags.Duration("lim", 0, "The limit of the truncation.")
-	user := flags.String("u", "", "User name.")
+	user := flags.String("u", auth.Anonimous, "User name.")
 	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
@@ -377,7 +388,7 @@ func truncateCommand(args []string) {
 
 	password := ""
 
-	if *user != "" {
+	if *user != auth.Anonimous {
 		fmt.Print("Enter password:")
 		password = string(gopass.GetPasswd())
 	}
@@ -405,7 +416,7 @@ func truncateCommand(args []string) {
 func statCommand(args []string) {
 	flags := flag.NewFlagSet("stat", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
-	user := flags.String("u", "", "User name.")
+	user := flags.String("u", auth.Anonimous, "User name.")
 	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
@@ -418,7 +429,7 @@ func statCommand(args []string) {
 
 	password := ""
 
-	if *user != "" {
+	if *user != auth.Anonimous {
 		fmt.Print("Enter password:")
 		password = string(gopass.GetPasswd())
 	}
@@ -448,6 +459,90 @@ func statCommand(args []string) {
 	for stat := range stats {
 		fmt.Printf("%s %s/%s %.2f%%\n", stat.Addr, formatSize(stat.Sz), formatSize(stat.Lim), float64(stat.Sz)*100.0/float64(stat.Lim))
 	}
+}
+
+func userCommand(args []string) {
+	flags := flag.NewFlagSet("user", flag.ExitOnError)
+	addr := flags.String("addr", "", "Address and port of a log or a hub.")
+	user := flags.String("u", auth.Anonimous, "User name.")
+	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
+	name := flags.String("name", "", "Name of the user to edit.")
+	pass := flags.Bool("pass", false, "Whether to set the password.")
+	roles := flags.String("roles", "", "Comma separated list of roles to assign to the user.")
+	del := flags.Bool("d", false, "Delete user.")
+
+	flags.Parse(args)
+
+	if *name == "" {
+		println("Name is not specified.")
+		os.Exit(1)
+	}
+
+	password := ""
+
+	if *user != auth.Anonimous {
+		fmt.Print("Enter password:")
+		password = string(gopass.GetPasswd())
+	}
+
+	userPassword := ""
+
+	if *pass {
+		fmt.Print("Enter user's password:")
+		userPassword = string(gopass.GetPasswd())
+	}
+
+	var rolesToAssign []string
+
+	if *roles != "" {
+		rolesToAssign = make([]string, 0, 4)
+
+		for _, r := range strings.Split(*roles, ",") {
+			rolesToAssign = append(rolesToAssign, strings.Trim(r, " "))
+		}
+	}
+
+	cred := lhproto.Credentials{*user, password}
+
+	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
+	defer client.Close()
+
+	usr := lhproto.UserInfoJSON{
+		*name,
+		userPassword,
+		*pass,
+		rolesToAssign,
+		*del,
+	}
+
+	client.User(&cred, &usr)
+}
+
+func passCommand(args []string) {
+	flags := flag.NewFlagSet("pass", flag.ExitOnError)
+	addr := flags.String("addr", "", "Address and port of a log or a hub.")
+	user := flags.String("u", "", "User name.")
+	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
+
+	if *user == "" {
+		println("User is not specified.")
+		os.Exit(1)
+	}
+
+	fmt.Print("Enter password:")
+	password := string(gopass.GetPasswd())
+
+	fmt.Print("Enter new password:")
+	newPassword := string(gopass.GetPasswd())
+
+	cred := lhproto.Credentials{*user, password}
+
+	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
+	defer client.Close()
+
+	client.Password(&cred, &lhproto.PasswordJSON{newPassword})
 }
 
 func helpCommand(args []string) {

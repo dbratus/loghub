@@ -22,6 +22,7 @@ const (
 	AllowTruncate
 	AllowStat
 	AllowUser
+	AllowPassword
 )
 
 const (
@@ -34,14 +35,14 @@ const (
 const (
 	DefaultAdmin = "admin"
 	DefaultHub   = "hub"
-	Anonimous    = "*"
+	Anonimous    = "all"
 )
 
 var rolePermissions = map[int]int{
-	RoleReader: AllowRead,
-	RoleWriter: AllowWrite,
-	RoleAdmin:  AllowRead | AllowTruncate | AllowStat | AllowUser,
-	RoleHub:    AllowRead | AllowInternalRead | AllowTransfer | AllowAccept,
+	RoleReader: AllowRead | AllowPassword,
+	RoleWriter: AllowWrite | AllowPassword,
+	RoleAdmin:  AllowRead | AllowTruncate | AllowStat | AllowUser | AllowPassword,
+	RoleHub:    AllowRead | AllowInternalRead | AllowTransfer | AllowAccept | AllowTruncate | AllowStat | AllowUser | AllowPassword,
 }
 
 var roleNames = map[string]int{
@@ -60,6 +61,7 @@ var permissionNames = map[string]int{
 	lhproto.ActionTruncate:     AllowTruncate,
 	lhproto.ActionStat:         AllowStat,
 	lhproto.ActionUser:         AllowUser,
+	lhproto.ActionPassword:     AllowPassword,
 }
 
 type Permissions struct {
@@ -134,11 +136,11 @@ func (perms *Permissions) checkInit() {
 func (perms *Permissions) IsAllowed(action, user, password string) bool {
 	perms.checkInit()
 
-	if user == "" {
-		user = Anonimous
-	}
-
 	if ud, found := perms.Users[user]; found {
+		if password == "" && ud.PasswordHash == nil {
+			return true
+		}
+
 		passwordHash := sha1.Sum([]byte(password))
 
 		if bytes.Compare(passwordHash[:], ud.PasswordHash) != 0 {
@@ -187,20 +189,25 @@ func (perms *Permissions) SetRoles(user string, roles []string) {
 func (perms *Permissions) SetPassword(user string, password string) {
 	perms.checkInit()
 
-	passwordHash := sha1.Sum([]byte(password))
+	var passwordHash []byte
+
+	if password != "" {
+		h := sha1.Sum([]byte(password))
+		passwordHash = h[:]
+	}
 
 	if ud, found := perms.Users[user]; found {
-		ud.PasswordHash = passwordHash[:]
+		ud.PasswordHash = passwordHash
 	} else {
 		perms.Users[user] = &UserData{
 			0,
-			passwordHash[:],
+			passwordHash,
 		}
 	}
 }
 
 func (perms *Permissions) DeleteUser(user string) {
-	if perms.Users != nil {
+	if perms.Users != nil && user != DefaultAdmin && user != DefaultHub && user != Anonimous {
 		delete(perms.Users, user)
 	}
 }
