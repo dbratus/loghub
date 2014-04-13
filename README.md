@@ -58,6 +58,10 @@ The 'hub' command accepts the same 'cert' and 'key' parameters, but additionally
 loghub hub -listen :10000 -stat :9999 -tls -cert cert.pem -key privkey.pem
 ```
 
+If you'd like to use TLS, but a certificate not signed by CA, you need to specify 'trust' flag to tell the hub to trust any certificate a log returns. 
+
+All commands connecting to log or hub (get, put, stat, truncate...) accept 'tls' and 'trust' flags.
+
 ### Permissions
 
 As log or hub started for the first time, its not yet ready for use because nobody can read and write it. By default, LogHub creates the following users:
@@ -117,7 +121,14 @@ package main
 import "github.com/dbratus/loghub-go"
 
 func main() {
-	log := loghub.NewClient(":10001", 1)
+	options := ClientOptions{
+		UseTls:             true,
+		//SkipCertValidation: true, If the certificate is not signed by CA.
+		MaxConnections:     5,
+		User:               "writer",
+		Password:           "secret",
+	}
+	log := loghub.NewClient(":10001", &options)
 	defer log.Close()
 
 	log.Write(1, "Example", "Example message.")
@@ -131,11 +142,21 @@ var http = require('http'),
 	loghub = require('loghub');
 
 //Connecting to log at localhost:10001.
-var log = loghub.connect(10001);
+var log = loghub.connect(10001, 'localhost', {
+	useTls: true,
+	//skipCertValidation: true, If the certificate is not signed by CA.
+	credentials: {
+		user: 'writer',
+		password: 'secret'
+	},
+	error: function(err) {
+		console.log(err);
+	}
+});
 
 var srv = http.createServer(function (req, resp) {
 	//Writing log entry:
-	//Severity = 1,
+	//Severity = 1, (valid values are between 0 and 255 inclusively)
 	//Source = 'HTTP',
 	//Message = 'Got request.'.
 	log.write(1, 'HTTP', 'Got request.');
