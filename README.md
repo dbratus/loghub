@@ -121,7 +121,7 @@ package main
 import "github.com/dbratus/loghub-go"
 
 func main() {
-	options := ClientOptions{
+	options := loghub.ClientOptions{
 		UseTls:             true,
 		//SkipCertValidation: true, If the certificate is not signed by CA.
 		MaxConnections:     5,
