@@ -98,6 +98,9 @@ func writeEntry(buf []byte, ent *LogEntry, prevPayloadLen int32, backHop int32) 
 	buf = writeUtf8(buf, ent.Source)
 	buf = append(buf, byte(ent.Encoding))
 
+	//Extension fields support (no extension fields for now).
+	buf = append(buf, byte(0))
+
 	binary.BigEndian.PutUint32(int64Buf[:4], uint32(len(ent.Message)))
 	buf = append(buf, int64Buf[:4]...)
 	buf = append(buf, ent.Message...)
@@ -199,6 +202,9 @@ func readEntry(file *os.File, offset int64) (ent *LogEntry, ok bool) {
 	}
 
 	ent.Encoding = int(int64Buf[0])
+	offset += 1
+
+	//Skipping the byte remained for the extension fields.
 	offset += 1
 
 	if m, err := readBytes(file, offset); err != nil {
