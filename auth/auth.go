@@ -35,7 +35,7 @@ const (
 const (
 	DefaultAdmin = "admin"
 	DefaultHub   = "hub"
-	Anonimous    = "all"
+	Anonymous    = "all"
 )
 
 var rolePermissions = map[int]int{
@@ -113,7 +113,7 @@ func LoadPermissions(home string) (*Permissions, error) {
 				perms.SetRoles(DefaultHub, hubRole[:])
 				perms.SetPassword(DefaultHub, "hub")
 
-				perms.SetPassword(Anonimous, "")
+				perms.SetPassword(Anonymous, "")
 			}
 		} else {
 			defer f.Close()
@@ -207,7 +207,7 @@ func (perms *Permissions) SetPassword(user string, password string) {
 }
 
 func (perms *Permissions) DeleteUser(user string) {
-	if perms.Users != nil && user != DefaultAdmin && user != DefaultHub && user != Anonimous {
+	if perms.Users != nil && user != DefaultAdmin && user != DefaultHub && user != Anonymous {
 		delete(perms.Users, user)
 	}
 }

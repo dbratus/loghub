@@ -221,7 +221,7 @@ func getCommand(args []string) {
 	format := flags.String("fmt", "%s %s %d %s", "Log entry format.")
 	tsfmt := flags.String("tsfmt", "2006-01-02 15:04:05", "Timestamp format.")
 	isUtc := flags.Bool("utc", false, "Return UTC timestamps.")
-	user := flags.String("u", auth.Anonimous, "User name.")
+	user := flags.String("u", auth.Anonymous, "User name.")
 	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
@@ -257,7 +257,7 @@ func getCommand(args []string) {
 
 	password := ""
 
-	if *user != auth.Anonimous {
+	if *user != auth.Anonymous {
 		fmt.Print("Enter password:")
 		password = string(gopass.GetPasswd())
 	}
@@ -317,7 +317,7 @@ func getCommand(args []string) {
 func putCommand(args []string) {
 	flags := flag.NewFlagSet("put", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of log.")
-	user := flags.String("u", auth.Anonimous, "User name.")
+	user := flags.String("u", auth.Anonymous, "User name.")
 	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
@@ -334,7 +334,7 @@ func putCommand(args []string) {
 
 	password := ""
 
-	if *user != auth.Anonimous {
+	if *user != auth.Anonymous {
 		fmt.Print("Enter password:")
 		password = string(gopass.GetPasswd())
 	}
@@ -370,7 +370,7 @@ func truncateCommand(args []string) {
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
 	src := flags.String("src", "", "Comma separated list of log sources.")
 	lim := flags.Duration("lim", 0, "The limit of the truncation.")
-	user := flags.String("u", auth.Anonimous, "User name.")
+	user := flags.String("u", auth.Anonymous, "User name.")
 	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
@@ -388,7 +388,7 @@ func truncateCommand(args []string) {
 
 	password := ""
 
-	if *user != auth.Anonimous {
+	if *user != auth.Anonymous {
 		fmt.Print("Enter password:")
 		password = string(gopass.GetPasswd())
 	}
@@ -416,7 +416,7 @@ func truncateCommand(args []string) {
 func statCommand(args []string) {
 	flags := flag.NewFlagSet("stat", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
-	user := flags.String("u", auth.Anonimous, "User name.")
+	user := flags.String("u", auth.Anonymous, "User name.")
 	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
@@ -429,7 +429,7 @@ func statCommand(args []string) {
 
 	password := ""
 
-	if *user != auth.Anonimous {
+	if *user != auth.Anonymous {
 		fmt.Print("Enter password:")
 		password = string(gopass.GetPasswd())
 	}
@@ -464,7 +464,7 @@ func statCommand(args []string) {
 func userCommand(args []string) {
 	flags := flag.NewFlagSet("user", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
-	user := flags.String("u", auth.Anonimous, "User name.")
+	user := flags.String("u", auth.Anonymous, "User name.")
 	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 	name := flags.String("name", "", "Name of the user to edit.")
@@ -481,7 +481,7 @@ func userCommand(args []string) {
 
 	password := ""
 
-	if *user != auth.Anonimous {
+	if *user != auth.Anonymous {
 		fmt.Print("Enter password:")
 		password = string(gopass.GetPasswd())
 	}

@@ -23,7 +23,7 @@ var actionsDenied = map[string]string{
 	"writer":  "read,iread,transfer,accept,truncate,stat,user",
 	"hub":     "write",
 	"admin":   "write,iread,transfer,accept",
-	Anonimous: "read,write,iread,transfer,accept,truncate,stat,user,pass",
+	Anonymous: "read,write,iread,transfer,accept,truncate,stat,user,pass",
 }
 
 func setupPermissions(perms *Permissions) {
@@ -72,7 +72,7 @@ func TestAuthenticationAuthorization(t *testing.T) {
 	checkPermissions(perms, "writer", "writer_password", false, actionsDenied["writer"], t)
 	checkPermissions(perms, "hub", "hub_password", false, actionsDenied["hub"], t)
 	checkPermissions(perms, "admin", "admin_password", false, actionsDenied["admin"], t)
-	checkPermissions(perms, Anonimous, "", false, actionsDenied[Anonimous], t)
+	checkPermissions(perms, Anonymous, "", false, actionsDenied[Anonymous], t)
 
 	perms.DeleteUser("reader")
 	perms.DeleteUser("writer")
@@ -81,9 +81,9 @@ func TestAuthenticationAuthorization(t *testing.T) {
 	checkPermissions(perms, "writer", "writer_password", false, actionsAllowed["writer"], t)
 
 	anonPerms := [...]string{"writer"}
-	perms.SetRoles(Anonimous, anonPerms[:])
+	perms.SetRoles(Anonymous, anonPerms[:])
 
-	checkPermissions(perms, Anonimous, "", true, "write", t)
+	checkPermissions(perms, Anonymous, "", true, "write", t)
 }
 
 func TestLoadSave(t *testing.T) {

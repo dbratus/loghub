@@ -42,6 +42,59 @@ loghub hub -listen :10000 -stat :9999
 
 This command starts a hub listening port 10000 for querying and accepting notifications from logs on port 9999.
 
+## Security
+
+For user authentication LogHub attaches passwords to messages, so, if you care about password security, it is important to use TLS protocol for communication between LogHub components.
+
+To work in TLS mode, log and hub need a certificate and a private key in PEM format. Having these files, you can specify them as parameters to LogHub:
+
+```
+loghub log -listen 127.0.0.1:10000 -home /var/loghub -hub 127.0.0.1:9999 -lim 10240 -cert cert.pem -key privkey.pem
+```
+
+The 'hub' command accepts the same 'cert' and 'key' parameters, but additionally it needs 'tls' flag to know that the logs also work in TLS mode.
+
+```
+loghub hub -listen :10000 -stat :9999 -tls -cert cert.pem -key privkey.pem
+```
+
+### Permissions
+
+As log or hub started for the first time, its not yet ready for use because nobody can read and write it. By default, LogHub creates the following users:
+
+* admin - the default administrator.
+* hub - the special user that may work as a hub.
+* all - the default anonymous user.
+
+The 'admin' and 'hub' users are created with default passwords 'admin' and 'hub' respectively, so the first thing you need to do creating a new log or hub is to set passwords for these default users.
+
+```
+loghub -addr :10000 -u admin -pass -name admin
+loghub -addr :10000 -u admin -pass -name hub
+```
+
+The 'u' parameter is the user you are working as, 'name' specifies the name of the user you are editing, 'pass' flag tells that the password of the user needs to be changed. If the 'pass' flag is specified, you will be prompted for the user's password.
+
+It is important to set hub's password every time you restart the hub. Due to security concerns, hub doesn't store its password persistently, so you need to tell it the password every time you start it.
+
+To allow somebody to read and write the logs, you need to setup reader and writer users. This can be done with the same command.
+
+```
+loghub -addr :10000 -u admin -pass -name reader -roles reader
+loghub -addr :10001 -u admin -pass -name writer -roles writer
+loghub -addr :10002 -u admin -pass -name writer -roles writer
+...
+```
+
+Readers may be setup only on hub if they are going to read the logs via the hub only. Writers, as they write directly to the logs, need to be setup for each log individually. In test environments, you may wish to allow anonymous users to read and write the logs. This can be done with the following command:
+
+```
+loghub -addr :10000 -u admin -name all -roles reader,writer
+loghub -addr :10001 -u admin -name all -roles reader,writer
+loghub -addr :10002 -u admin -name all -roles reader,writer
+...
+```
+
 ## Writing logs
 
 Log entries in LogHub are the records with the following fields:
