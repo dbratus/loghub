@@ -77,7 +77,7 @@ func TestWriteReadLog(t *testing.T) {
 	initialLogSize = logManager.Size()
 
 	if initialLogSize != newLogManagerSize {
-		t.Error("Log size after open must not change.")
+		t.Errorf("Log size after open must not change. Was: %d, new: %d.", newLogManagerSize, initialLogSize)
 		t.FailNow()
 	}
 

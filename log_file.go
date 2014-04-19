@@ -6,7 +6,10 @@
 package main
 
 import (
+	"bytes"
+	"crypto/md5"
 	"encoding/binary"
+	"encoding/gob"
 	"github.com/dbratus/loghub/trace"
 	"os"
 	"regexp"
@@ -19,6 +22,9 @@ const entryPayloadBase = 16
 const timestampLength = 8
 const entryHeaderLength = entryPayloadBase + timestampLength
 const hopLength = 64
+const currentStateVersion = 1
+const maxOffset = int32(^uint32(0) ^ 1<<31)
+const logFileStateSize = int64(512)
 
 var logFileTrace = trace.New("LogFile")
 
@@ -38,12 +44,90 @@ type entryHeader struct {
 	timestamp         int64
 }
 
+type logFileState struct {
+	Version              int
+	LastTimestampWritten int64
+	PrevPayloadLen       int32
+	NextHopStartOffset   int64
+	HopCounter           int
+}
+
 func (h *entryHeader) NextOffset() int64 {
 	return int64(h.payloadLength) + int64(entryPayloadBase)
 }
 
 func (h *entryHeader) PrevOffset() int64 {
 	return int64(h.prevPayloadLength) + int64(entryPayloadBase)
+}
+
+func (state *logFileState) writeToBuffer() ([]byte, error) {
+	buf := make([]byte, logFileStateSize)
+
+	binary.BigEndian.PutUint32(buf, uint32(maxOffset))
+
+	encoder := gob.NewEncoder(bytes.NewBuffer(buf[4:4]))
+	if err := encoder.Encode(state); err != nil {
+		return nil, err
+	}
+
+	hashStart := len(buf) - md5.Size
+	hash := md5.Sum(buf[:hashStart])
+
+	copy(buf[hashStart:], hash[:])
+
+	return buf, nil
+}
+
+func (state *logFileState) write(file *os.File) error {
+	var buf []byte
+
+	if b, err := state.writeToBuffer(); err != nil {
+		return err
+	} else {
+		buf = b
+	}
+
+	if _, err := file.Write(buf); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (state *logFileState) read(file *os.File) (int64, bool) {
+	buf := make([]byte, logFileStateSize)
+	var offset int64
+
+	if pos, err := file.Seek(-logFileStateSize, 2); err != nil {
+		logFileTrace.Errorf("Failed to seek to the begining of the state: %s.", err.Error())
+		return 0, false
+	} else {
+		offset = pos
+	}
+
+	if _, err := file.Read(buf); err != nil {
+		logFileTrace.Errorf("Failed to read the state: %s.", err.Error())
+		return 0, false
+	}
+
+	hashStart := len(buf) - md5.Size
+	hash := md5.Sum(buf[:hashStart])
+
+	if bytes.Compare(hash[:], buf[hashStart:]) != 0 {
+		return 0, false
+	}
+
+	decoder := gob.NewDecoder(bytes.NewBuffer(buf[4:hashStart]))
+	if err := decoder.Decode(state); err != nil {
+		logFileTrace.Errorf("Failed to decode the state: %s.", err.Error())
+		return 0, false
+	}
+
+	return offset, false
+}
+
+func logFileSize(stat os.FileInfo) int64 {
+	return stat.Size() - logFileStateSize
 }
 
 func OpenLogFile(path string, create bool) (*LogFile, error) {
@@ -329,14 +413,9 @@ func findAndReadEntries(file *os.File, lastEntryOffset int64, cmd readLogCmd, re
 	}
 }
 
-func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int32, nextHopStartOffset int64, hopCounter int, initialized bool) {
+func initLogFile(file *os.File) (state *logFileState, initialized bool) {
 	initialized = true
-	lastTimestampWritten = 0
-	prevPayloadLen = 0
-	nextHopStartOffset = 0
-	hopCounter = hopLength
 
-	offset := int64(0)
 	var fileSize int64
 
 	if stat, err := file.Stat(); err != nil {
@@ -347,9 +426,35 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 		fileSize = stat.Size()
 	}
 
+	state = new(logFileState)
+	state.LastTimestampWritten = 0
+	state.PrevPayloadLen = 0
+	state.NextHopStartOffset = 0
+	state.HopCounter = hopLength
+	state.Version = currentStateVersion
+
 	if fileSize == 0 {
 		return
 	}
+
+	if offset, ok := state.read(file); ok {
+		if err := file.Truncate(offset); err != nil {
+			logFileTrace.Errorf("Failed to truncate a log file: %s.", err.Error())
+			initialized = false
+			return
+		}
+
+		//Setting the cursor to the end of the file.
+		if _, err := file.Seek(0, 2); err != nil {
+			logFileTrace.Errorf("Failed to seek to the end of a log file: %s.", err.Error())
+			initialized = false
+			return
+		}
+
+		return
+	}
+
+	offset := int64(0)
 
 	for {
 		header, ok := readEntryHeader(file, offset)
@@ -376,8 +481,8 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 			return
 		}
 
-		lastTimestampWritten = header.timestamp
-		prevPayloadLen = header.payloadLength
+		state.LastTimestampWritten = header.timestamp
+		state.PrevPayloadLen = header.payloadLength
 
 		//Checking the end of the file.
 		if nextOffset == fileSize {
@@ -398,19 +503,19 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 		//Moving next.
 		if header.hop > 0 {
 			hopOffset := offset + int64(header.hop)
-			hopCounter = hopLength
+			state.HopCounter = hopLength
 
 			if hopOffset <= fileSize {
 				offset = hopOffset
-				nextHopStartOffset = offset
+				state.NextHopStartOffset = offset
 			} else {
-				nextHopStartOffset = offset
+				state.NextHopStartOffset = offset
 				offset = nextOffset
 			}
 
 		} else {
 			offset = nextOffset
-			hopCounter--
+			state.HopCounter--
 		}
 	}
 
@@ -420,36 +525,36 @@ func initLogFile(file *os.File) (lastTimestampWritten int64, prevPayloadLen int3
 func (log *LogFile) run(file *os.File) {
 	buf := make([]byte, 0, defaultEntryBufferSize)
 
-	lastTimestampWritten, prevPayloadLen, nextHopStartOffset, hopCounter, initialized := initLogFile(file)
+	state, initialized := initLogFile(file)
 	currentOffset, _ := file.Seek(0, 1)
 	readsCounter := new(int32)
 
 	onWrite := func(ent *LogEntry) {
-		if initialized && ent.Timestamp >= lastTimestampWritten {
+		if initialized && ent.Timestamp >= state.LastTimestampWritten {
 			backHop := int32(0)
 
-			if hopCounter--; hopCounter == 0 {
-				backHop = int32(currentOffset - nextHopStartOffset)
+			if state.HopCounter--; state.HopCounter == 0 {
+				backHop = int32(currentOffset - state.NextHopStartOffset)
 			}
 
-			buf, prevPayloadLen = writeEntry(buf, ent, prevPayloadLen, backHop)
+			buf, state.PrevPayloadLen = writeEntry(buf, ent, state.PrevPayloadLen, backHop)
 
 			if _, err := file.Write(buf); err != nil {
 				logFileTrace.Errorf("Failed to wrtie log entry: %s.", err.Error())
 				currentOffset, _ = file.Seek(0, 1)
 
 			} else {
-				if hopCounter == 0 {
-					if writeHop(file, currentOffset, nextHopStartOffset) {
-						nextHopStartOffset = currentOffset
-						hopCounter = hopLength
+				if state.HopCounter == 0 {
+					if writeHop(file, currentOffset, state.NextHopStartOffset) {
+						state.NextHopStartOffset = currentOffset
+						state.HopCounter = hopLength
 					}
 				}
 
 				currentOffset += int64(len(buf))
 			}
 
-			lastTimestampWritten = ent.Timestamp
+			state.LastTimestampWritten = ent.Timestamp
 			buf = buf[:0]
 		}
 	}
@@ -459,7 +564,7 @@ func (log *LogFile) run(file *os.File) {
 			close(cmd.entries)
 		}
 
-		lastEntryOffset := currentOffset - int64(prevPayloadLen+entryPayloadBase)
+		lastEntryOffset := currentOffset - int64(state.PrevPayloadLen+entryPayloadBase)
 
 		atomic.AddInt32(readsCounter, 1)
 		go findAndReadEntries(file, lastEntryOffset, cmd, readsCounter)
@@ -501,6 +606,10 @@ func (log *LogFile) run(file *os.File) {
 
 			for cnt := atomic.LoadInt32(readsCounter); cnt > 0; cnt = atomic.LoadInt32(readsCounter) {
 				runtime.Gosched()
+			}
+
+			if err := state.write(file); err != nil {
+				logFileTrace.Errorf("Failed to write log file state: %s.", err.Error())
 			}
 
 			logFileTrace.Debugf("Closing %s.", log.path)

@@ -10,9 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dbratus/loghub/history"
+	"github.com/dbratus/loghub/rlimit"
 	"github.com/dbratus/loghub/rnglock"
 	"github.com/dbratus/loghub/trace"
-	"github.com/dbratus/loghub/rlimit"
 	"os"
 	"regexp"
 	"strings"
@@ -250,7 +250,7 @@ func initLogManager(home string) (logSources map[string]*logSourceInfo, size *in
 									if _, err = os.Stat(logFileName); os.IsNotExist(err) {
 										os.Rename(srcDirName+"/"+dirFile.Name(), logFilePath)
 
-										*size += dirFile.Size()
+										*size += logFileSize(dirFile)
 										start, _ := getRangeByFileName(logFileName)
 
 										srcInfo.history.Insert(timestampToTime(start))
@@ -261,7 +261,7 @@ func initLogManager(home string) (logSources map[string]*logSourceInfo, size *in
 								} else {
 									//The file is a normal log file.
 
-									*size += dirFile.Size()
+									*size += logFileSize(dirFile)
 									start, _ := getRangeByFileName(dirFile.Name())
 
 									srcInfo.history.Insert(timestampToTime(start))
@@ -582,7 +582,7 @@ func (mg *defaultLogManager) run() {
 			size := int64(0)
 
 			if stat, err := os.Stat(fileName); err == nil {
-				size = stat.Size()
+				size = logFileSize(stat)
 			} else {
 				logManagerTrace.Errorf("Failed to get stat of log file: %s.", err.Error())
 			}
@@ -635,14 +635,14 @@ func (mg *defaultLogManager) run() {
 				chunkId := getSourceDirName(src) + "/" + getFileNameForTimestamp(timeToTimestamp(srcInfo.history.Start()))
 				fileName := mg.home + "/" + chunkId
 
-				if stat, err := os.Stat(fileName); err == nil && stat.Size() < cmd.maxSize {
+				if stat, err := os.Stat(fileName); err == nil && logFileSize(stat) < cmd.maxSize {
 					rangeStart := timeToTimestamp(srcInfo.history.Start())
 					rangeEnd := timeToTimestamp(srcInfo.history.Start().Add(time.Hour - time.Nanosecond))
 
 					lck := srcInfo.lock.Lock(opCnt, rangeStart, rangeEnd, true)
 
 					if logFile, err := getLogFile(chunkId, false, true); err == nil {
-						cmd.chunkChan <- logChunkInfo{chunkId, stat.Size()}
+						cmd.chunkChan <- logChunkInfo{chunkId, logFile.Size()}
 						close(cmd.chunkChan)
 
 						results := make(chan *LogEntry)
@@ -700,7 +700,7 @@ func (mg *defaultLogManager) run() {
 					logFile.Close()
 
 					if stat, err = os.Stat(fileName); err == nil {
-						atomic.AddInt64(closedSize, stat.Size())
+						atomic.AddInt64(closedSize, logFileSize(stat))
 					}
 
 					srcInfo.lock.Unlock(lck)
@@ -712,7 +712,7 @@ func (mg *defaultLogManager) run() {
 				return
 			}
 		} else if err == nil {
-			atomic.AddInt64(closedSize, -stat.Size())
+			atomic.AddInt64(closedSize, -logFileSize(stat))
 
 			if logFile, err := getLogFile(cmd.id, false, false); err == nil {
 				entriesRead := make(chan *LogEntry)
@@ -747,7 +747,7 @@ func (mg *defaultLogManager) run() {
 						}
 
 						if stat, err = os.Stat(fileName); err == nil {
-							atomic.AddInt64(closedSize, stat.Size())
+							atomic.AddInt64(closedSize, logFileSize(stat))
 						} else {
 							logManagerTrace.Errorf("Failed to get stat of renamed file: %s.", err.Error())
 						}
@@ -783,12 +783,12 @@ func (mg *defaultLogManager) run() {
 			fileName := mg.home + "/" + cmd.id
 			dirName := mg.home + "/" + getSourceDirName(src)
 
+			onClose(cmd.id)
+
 			if stat, err := os.Stat(fileName); err == nil {
 				rangeStart, rangeEnd := getRangeByFileName(ts)
 
 				lck := srcInfo.lock.Lock(opCnt, rangeStart, rangeEnd, false)
-
-				onClose(cmd.id)
 
 				srcInfo.history.Delete(timestampToTime(rangeStart))
 				removeDir := false
@@ -800,7 +800,7 @@ func (mg *defaultLogManager) run() {
 
 				go func(removeDir bool) {
 					if err := os.Remove(fileName); err == nil {
-						atomic.AddInt64(closedSize, -stat.Size())
+						atomic.AddInt64(closedSize, -logFileSize(stat))
 					} else {
 						logManagerTrace.Errorf("Failed to remove log file on transfer chunk deletion: %s.", err.Error())
 					}
