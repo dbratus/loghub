@@ -456,9 +456,17 @@ func statCommand(args []string) {
 		}
 	}
 
+	totalSize := int64(0)
+	totalLim := int64(0)
+
 	for stat := range stats {
 		fmt.Printf("%s %s/%s %.2f%%\n", stat.Addr, formatSize(stat.Sz), formatSize(stat.Lim), float64(stat.Sz)*100.0/float64(stat.Lim))
+
+		totalSize += stat.Sz
+		totalLim += stat.Lim
 	}
+
+	fmt.Printf("Total %s/%s %.2f%%\n", formatSize(totalSize), formatSize(totalLim), float64(totalSize)*100.0/float64(totalLim))
 }
 
 func userCommand(args []string) {
