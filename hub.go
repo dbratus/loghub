@@ -6,6 +6,7 @@
 package main
 
 import (
+	"github.com/dbratus/loghub/auth"
 	"github.com/dbratus/loghub/balancer"
 	"github.com/dbratus/loghub/lhproto"
 	"github.com/dbratus/loghub/trace"
@@ -87,7 +88,7 @@ func (h *defaultHub) run() {
 
 	logs := make(map[string]*logInfo)
 	logBalancer := balancer.New()
-	cred := lhproto.Credentials{"", ""}
+	cred := lhproto.Credentials{auth.Anonymous, ""}
 
 	readLog := func(queries []*LogQuery, client lhproto.ProtocolHandler, entries chan *LogEntry, usersCount *int32) {
 		defer atomic.AddInt32(usersCount, -1)
@@ -185,6 +186,10 @@ func (h *defaultHub) run() {
 	}
 
 	onTruncate := func(cmd truncateLogCmd) {
+		if cred.User == auth.Anonymous {
+			hubTrace.Warn("Hub credentials are not set.")
+		}
+
 		for _, log := range logs {
 			atomic.AddInt32(log.usersCount, 1)
 
@@ -197,7 +202,7 @@ func (h *defaultHub) run() {
 	}
 
 	onRebalance := func() {
-		if cred.User != "" {
+		if cred.User != auth.Anonymous {
 			for _, transfer := range logBalancer.MakeTransfers() {
 				hubTrace.Debugf("Transfering %d from %s to %s, id %d.", transfer.Amount, transfer.From, transfer.To, transfer.Id)
 

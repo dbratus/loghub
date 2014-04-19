@@ -80,10 +80,13 @@ func TestAuthenticationAuthorization(t *testing.T) {
 	checkPermissions(perms, "reader", "reader_password", false, actionsAllowed["reader"], t)
 	checkPermissions(perms, "writer", "writer_password", false, actionsAllowed["writer"], t)
 
-	anonPerms := [...]string{"writer"}
+	anonPerms := [...]string{"writer", "reader"}
+	println("Setting anonimous roles")
 	perms.SetRoles(Anonymous, anonPerms[:])
 
 	checkPermissions(perms, Anonymous, "", true, "write", t)
+	checkPermissions(perms, Anonymous, "", true, "read", t)
+	checkPermissions(perms, Anonymous, "", false, "iread,transfer,accept,truncate,stat,user,pass", t)
 }
 
 func TestLoadSave(t *testing.T) {

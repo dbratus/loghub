@@ -137,13 +137,17 @@ func (perms *Permissions) IsAllowed(action, user, password string) bool {
 	perms.checkInit()
 
 	if ud, found := perms.Users[user]; found {
-		if password == "" && ud.PasswordHash == nil {
-			return true
+		if password != "" || ud.PasswordHash != nil {
+			passwordHash := sha1.Sum([]byte(password))
+
+			if bytes.Compare(passwordHash[:], ud.PasswordHash) != 0 {
+				return false
+			}
 		}
 
-		passwordHash := sha1.Sum([]byte(password))
-
-		if bytes.Compare(passwordHash[:], ud.PasswordHash) != 0 {
+		//It is always prohibited for an anonymous to
+		//set password for the anonymous account.
+		if user == Anonymous && action == "pass" {
 			return false
 		}
 
