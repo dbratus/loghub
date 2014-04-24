@@ -154,7 +154,7 @@ func hubCommand(args []string) {
 	home := flags.String("home", "", "Home directory.") //TODO: Get default from environment variable.
 	certFile := flags.String("cert", "", "TLS certificate PEM file.")
 	keyFile := flags.String("key", "", "Private key PEM file.")
-	useTls := flags.Bool("tls", false, "Whether to use TLS protocol to connect logs.")
+	useTLS := flags.Bool("tls", false, "Whether to use TLS protocol to connect logs.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 	debug := flags.Bool("debug", false, "Write debug information.")
 
@@ -180,7 +180,7 @@ func hubCommand(args []string) {
 		}
 	}
 
-	hub := NewDefaultHub(*useTls, *trust)
+	hub := NewDefaultHub(*useTLS, *trust)
 
 	var stopLogStatReceiver func()
 
@@ -222,7 +222,7 @@ func getCommand(args []string) {
 	tsfmt := flags.String("tsfmt", "2006-01-02 15:04:05", "Timestamp format.")
 	isUtc := flags.Bool("utc", false, "Return UTC timestamps.")
 	user := flags.String("u", auth.Anonymous, "User name.")
-	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	useTLS := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
 	flags.Parse(args)
@@ -264,7 +264,7 @@ func getCommand(args []string) {
 
 	cred := lhproto.Credentials{*user, password}
 
-	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
+	client := lhproto.NewClient(*addr, 1, *useTLS, *trust)
 	defer client.Close()
 
 	queries := make(chan *lhproto.LogQueryJSON)
@@ -318,7 +318,7 @@ func putCommand(args []string) {
 	flags := flag.NewFlagSet("put", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of log.")
 	user := flags.String("u", auth.Anonymous, "User name.")
-	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	useTLS := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
 	flags.Parse(args)
@@ -329,7 +329,7 @@ func putCommand(args []string) {
 	}
 
 	input := bufio.NewReader(os.Stdin)
-	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
+	client := lhproto.NewClient(*addr, 1, *useTLS, *trust)
 	entChan := make(chan *lhproto.IncomingLogEntryJSON)
 
 	password := ""
@@ -371,7 +371,7 @@ func truncateCommand(args []string) {
 	src := flags.String("src", "", "Comma separated list of log sources.")
 	lim := flags.Duration("lim", 0, "The limit of the truncation.")
 	user := flags.String("u", auth.Anonymous, "User name.")
-	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	useTLS := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
 	flags.Parse(args)
@@ -395,7 +395,7 @@ func truncateCommand(args []string) {
 
 	cred := lhproto.Credentials{*user, password}
 
-	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
+	client := lhproto.NewClient(*addr, 1, *useTLS, *trust)
 	defer client.Close()
 
 	if *src == "" {
@@ -417,7 +417,7 @@ func statCommand(args []string) {
 	flags := flag.NewFlagSet("stat", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
 	user := flags.String("u", auth.Anonymous, "User name.")
-	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	useTLS := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
 	flags.Parse(args)
@@ -436,7 +436,7 @@ func statCommand(args []string) {
 
 	cred := lhproto.Credentials{*user, password}
 
-	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
+	client := lhproto.NewClient(*addr, 1, *useTLS, *trust)
 	defer client.Close()
 
 	stats := make(chan *lhproto.StatJSON)
@@ -473,7 +473,7 @@ func userCommand(args []string) {
 	flags := flag.NewFlagSet("user", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
 	user := flags.String("u", auth.Anonymous, "User name.")
-	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	useTLS := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 	name := flags.String("name", "", "Name of the user to edit.")
 	pass := flags.Bool("pass", false, "Whether to set the password.")
@@ -513,7 +513,7 @@ func userCommand(args []string) {
 
 	cred := lhproto.Credentials{*user, password}
 
-	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
+	client := lhproto.NewClient(*addr, 1, *useTLS, *trust)
 	defer client.Close()
 
 	usr := lhproto.UserInfoJSON{
@@ -531,7 +531,7 @@ func passCommand(args []string) {
 	flags := flag.NewFlagSet("pass", flag.ExitOnError)
 	addr := flags.String("addr", "", "Address and port of a log or a hub.")
 	user := flags.String("u", "", "User name.")
-	useTls := flags.Bool("tls", false, "Whether to use TLS protocol.")
+	useTLS := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
 	if *user == "" {
@@ -547,7 +547,7 @@ func passCommand(args []string) {
 
 	cred := lhproto.Credentials{*user, password}
 
-	client := lhproto.NewClient(*addr, 1, *useTls, *trust)
+	client := lhproto.NewClient(*addr, 1, *useTLS, *trust)
 	defer client.Close()
 
 	client.Password(&cred, &lhproto.PasswordJSON{newPassword})

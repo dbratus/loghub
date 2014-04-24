@@ -55,11 +55,11 @@ type defaultHub struct {
 	credChan           chan lhproto.Credentials
 	iterChan           chan func(lhproto.ProtocolHandler)
 	closeChan          chan chan bool
-	useTls             bool
+	useTLS             bool
 	skipCertValidation bool
 }
 
-func NewDefaultHub(useTls bool, skipCertValidation bool) Hub {
+func NewDefaultHub(useTLS bool, skipCertValidation bool) Hub {
 	h := &defaultHub{
 		make(chan readLogMultiSrcCmd),
 		make(chan setLogStatCmd),
@@ -68,7 +68,7 @@ func NewDefaultHub(useTls bool, skipCertValidation bool) Hub {
 		make(chan lhproto.Credentials),
 		make(chan func(lhproto.ProtocolHandler)),
 		make(chan chan bool),
-		useTls,
+		useTLS,
 		skipCertValidation,
 	}
 
@@ -158,7 +158,7 @@ func (h *defaultHub) run() {
 
 			logs[addr] = &logInfo{
 				cmd.stat,
-				lhproto.NewClient(addr, maxConnectionsPerClient, h.useTls, h.skipCertValidation),
+				lhproto.NewClient(addr, maxConnectionsPerClient, h.useTLS, h.skipCertValidation),
 				time.Now().Add(logCloseTimeout),
 				new(int32),
 				cmd.stat.LastTransferId,

@@ -30,10 +30,10 @@ type logHubClient struct {
 	tlsConfig      *tls.Config
 }
 
-func NewClient(address string, connPoolSize int, useTls bool, skipCertValidation bool) ProtocolHandler {
+func NewClient(address string, connPoolSize int, useTLS bool, skipCertValidation bool) ProtocolHandler {
 	var tlsConfig *tls.Config
 
-	if useTls {
+	if useTLS {
 		tlsConfig = &tls.Config{
 			InsecureSkipVerify: skipCertValidation,
 		}

@@ -122,7 +122,7 @@ import "github.com/dbratus/loghub-go"
 
 func main() {
 	options := loghub.ClientOptions{
-		UseTls:             true,
+		UseTLS:             true,
 		//SkipCertValidation: true, If the certificate is not signed by CA.
 		MaxConnections:     5,
 		User:               "writer",
@@ -143,7 +143,7 @@ var http = require('http'),
 
 //Connecting to log at localhost:10001.
 var log = loghub.connect(10001, 'localhost', {
-	useTls: true,
+	useTLS: true,
 	//skipCertValidation: true, If the certificate is not signed by CA.
 	credentials: {
 		user: 'writer',
