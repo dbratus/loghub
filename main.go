@@ -466,7 +466,13 @@ func statCommand(args []string) {
 		totalLim += stat.Lim
 	}
 
-	fmt.Printf("Total %s/%s %.2f%%\n", formatSize(totalSize), formatSize(totalLim), float64(totalSize)*100.0/float64(totalLim))
+	percentFull := float64(0)
+
+	if totalLim > 0 {
+		percentFull = float64(totalSize) * 100.0 / float64(totalLim)
+	}
+
+	fmt.Printf("Total %s/%s %.2f%%\n", formatSize(totalSize), formatSize(totalLim), percentFull)
 }
 
 func userCommand(args []string) {
