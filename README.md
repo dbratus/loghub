@@ -55,7 +55,7 @@ loghub log -listen 127.0.0.1:10000 -home /var/loghub -hub 127.0.0.1:9999 -lim 10
 The 'hub' command accepts the same 'cert' and 'key' parameters, but additionally it needs 'tls' flag to know that the logs also work in TLS mode.
 
 ```
-loghub hub -listen :10000 -stat :9999 -tls -cert cert.pem -key privkey.pem
+loghub hub -listen :10000 -home /var/loghub -stat :9999 -tls -cert cert.pem -key privkey.pem
 ```
 
 If you'd like to use TLS, but a certificate not signed by CA, you need to specify 'trust' flag to tell the hub to trust any certificate a log returns. 
