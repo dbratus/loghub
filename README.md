@@ -73,8 +73,8 @@ As log or hub started for the first time, its not yet ready for use because nobo
 The 'admin' and 'hub' users are created with default passwords 'admin' and 'hub' respectively, so the first thing you need to do creating a new log or hub is to set passwords for these default users.
 
 ```
-loghub -addr :10000 -u admin -pass -name admin
-loghub -addr :10000 -u admin -pass -name hub
+loghub user -addr :10000 -u admin -pass -name admin
+loghub user -addr :10000 -u admin -pass -name hub
 ```
 
 The 'u' parameter is the user you are working as, 'name' specifies the name of the user you are editing, 'pass' flag tells that the password of the user needs to be changed. If the 'pass' flag is specified, you will be prompted for the user's password.
@@ -84,18 +84,18 @@ It is important to set hub's password every time you restart the hub. Due to sec
 To allow somebody to read and write the logs, you need to setup reader and writer users. This can be done with the same command.
 
 ```
-loghub -addr :10000 -u admin -pass -name reader -roles reader
-loghub -addr :10001 -u admin -pass -name writer -roles writer
-loghub -addr :10002 -u admin -pass -name writer -roles writer
+loghub user -addr :10000 -u admin -pass -name reader -roles reader
+loghub user -addr :10001 -u admin -pass -name writer -roles writer
+loghub user -addr :10002 -u admin -pass -name writer -roles writer
 ...
 ```
 
 Readers may be setup only on hub if they are going to read the logs via the hub only. Writers, as they write directly to the logs, need to be setup for each log individually. In test environments, you may wish to allow anonymous users to read and write the logs. This can be done with the following command:
 
 ```
-loghub -addr :10000 -u admin -name all -roles reader,writer
-loghub -addr :10001 -u admin -name all -roles reader,writer
-loghub -addr :10002 -u admin -name all -roles reader,writer
+loghub user -addr :10000 -u admin -name all -roles reader,writer
+loghub user -addr :10001 -u admin -name all -roles reader,writer
+loghub user -addr :10002 -u admin -name all -roles reader,writer
 ...
 ```
 
