@@ -97,10 +97,8 @@ func startServer(address string, handler lhproto.ProtocolHandler, cert *tls.Cert
 			var tlsConfig *tls.Config
 
 			if cert != nil {
-				certs := [...]tls.Certificate{*cert}
-
 				tlsConfig = &tls.Config{
-					Certificates: certs[:],
+					Certificates: []tls.Certificate{*cert},
 				}
 			}
 

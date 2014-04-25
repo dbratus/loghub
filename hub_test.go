@@ -13,7 +13,7 @@ import (
 )
 
 func runHubTest(t *testing.T, logsCount int, test func(Hub, []*testProtocolHandler)) {
-	hub := NewDefaultHub(false, false)
+	hub := NewDefaultHub(false, false, "key")
 	defer hub.Close()
 
 	closeFuncs := make([]func(), 0, logsCount)

@@ -30,7 +30,6 @@ type Hub interface {
 	Truncate(string, int64)
 	GetStats() map[string]*LogStat
 	ForEachLog(func(lhproto.ProtocolHandler))
-	SetCredentials(lhproto.Credentials)
 
 	Close()
 }
@@ -45,24 +44,24 @@ type defaultHub struct {
 	statChan           chan *LogStat
 	truncateChan       chan truncateLogCmd
 	getStatsChan       chan chan map[string]*LogStat
-	credChan           chan lhproto.Credentials
 	iterChan           chan func(lhproto.ProtocolHandler)
 	closeChan          chan chan bool
 	useTLS             bool
 	skipCertValidation bool
+	instanceKey        string
 }
 
-func NewDefaultHub(useTLS bool, skipCertValidation bool) Hub {
+func NewDefaultHub(useTLS bool, skipCertValidation bool, instanceKey string) Hub {
 	h := &defaultHub{
 		make(chan readLogMultiSrcCmd),
 		make(chan *LogStat),
 		make(chan truncateLogCmd),
 		make(chan chan map[string]*LogStat),
-		make(chan lhproto.Credentials),
 		make(chan func(lhproto.ProtocolHandler)),
 		make(chan chan bool),
 		useTLS,
 		skipCertValidation,
+		instanceKey,
 	}
 
 	go h.run()
@@ -81,7 +80,7 @@ func (h *defaultHub) run() {
 
 	logs := make(map[string]*logInfo)
 	logBalancer := balancer.New()
-	cred := lhproto.Credentials{auth.Anonymous, ""}
+	cred := lhproto.Credentials{h.instanceKey, ""}
 
 	readLog := func(queries []*LogQuery, client lhproto.ProtocolHandler, entries chan *LogEntry, usersCount *int32) {
 		defer atomic.AddInt32(usersCount, -1)
@@ -255,13 +254,6 @@ func (h *defaultHub) run() {
 				onGetStats(statsChan)
 			}
 
-		case newCred, ok := <-h.credChan:
-			if ok {
-				cred = newCred
-
-				hubTrace.Info("Credentials changed.")
-			}
-
 		case iter, ok := <-h.iterChan:
 			if ok {
 				onIter(iter)
@@ -315,15 +307,10 @@ func (h *defaultHub) ForEachLog(iter func(lhproto.ProtocolHandler)) {
 	h.iterChan <- iter
 }
 
-func (h *defaultHub) SetCredentials(cred lhproto.Credentials) {
-	h.credChan <- cred
-}
-
 func (h *defaultHub) Close() {
 	close(h.readChan)
 	close(h.statChan)
 	close(h.getStatsChan)
-	close(h.credChan)
 	close(h.iterChan)
 
 	ack := make(chan bool)

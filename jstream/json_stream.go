@@ -14,7 +14,7 @@ import (
 
 var ErrStreamDelimiter = errors.New("Stream delimiter encountered")
 
-var streamDelimiter = [...]byte{byte(0)}
+var streamDelimiter = []byte{byte(0)}
 
 type Reader interface {
 	ReadJSON(interface{}) error
@@ -74,7 +74,7 @@ func (w *streamWriter) WriteJSON(source interface{}) error {
 }
 
 func (w *streamWriter) WriteDelimiter() error {
-	if _, err := w.writer.Write(streamDelimiter[:]); err != nil {
+	if _, err := w.writer.Write(streamDelimiter); err != nil {
 		return err
 	}
 

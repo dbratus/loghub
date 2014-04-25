@@ -7,7 +7,9 @@ package auth
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/gob"
 	"github.com/dbratus/loghub/lhproto"
 	"os"
@@ -30,26 +32,28 @@ const (
 	RoleWriter
 	RoleHub
 	RoleAdmin
+	RoleInstance
 )
 
 const (
 	DefaultAdmin = "admin"
-	DefaultHub   = "hub"
 	Anonymous    = "all"
 )
 
+const instanceKeyLength = 32
+
 var rolePermissions = map[int]int{
-	RoleReader: AllowRead | AllowPassword,
-	RoleWriter: AllowWrite | AllowPassword,
-	RoleAdmin:  AllowRead | AllowTruncate | AllowStat | AllowUser | AllowPassword,
-	RoleHub:    AllowRead | AllowInternalRead | AllowTransfer | AllowAccept | AllowTruncate | AllowStat | AllowUser | AllowPassword,
+	RoleReader:   AllowRead | AllowPassword,
+	RoleWriter:   AllowWrite | AllowPassword,
+	RoleAdmin:    AllowRead | AllowTruncate | AllowStat | AllowUser | AllowPassword,
+	RoleInstance: AllowWrite | AllowRead | AllowInternalRead | AllowTransfer | AllowAccept | AllowTruncate | AllowStat | AllowUser | AllowPassword,
 }
 
 var roleNames = map[string]int{
-	"reader": RoleReader,
-	"writer": RoleWriter,
-	"hub":    RoleHub,
-	"admin":  RoleAdmin,
+	"reader":   RoleReader,
+	"writer":   RoleWriter,
+	"admin":    RoleAdmin,
+	"instance": RoleInstance,
 }
 
 var permissionNames = map[string]int{
@@ -65,12 +69,60 @@ var permissionNames = map[string]int{
 }
 
 type Permissions struct {
-	Users map[string]*UserData
+	Users       map[string]*UserData
+	instanceKey string
 }
 
 type UserData struct {
 	Roles        int
 	PasswordHash []byte
+}
+
+func LoadInstanceKey(home string) (string, error) {
+	fileName := home + "/instance.key"
+
+	if f, err := os.OpenFile(fileName, os.O_RDONLY, 0); err != nil {
+		if os.IsNotExist(err) {
+			key := make([]byte, instanceKeyLength)
+
+			if _, err := rand.Read(key); err != nil {
+				return "", err
+			}
+
+			keyBase64 := base64.StdEncoding.EncodeToString(key)
+
+			if f, err = os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0660); err != nil {
+				return "", err
+			} else {
+				defer f.Close()
+
+				if _, err := f.Write([]byte(keyBase64)); err != nil {
+					return "", err
+				}
+			}
+
+			return keyBase64, nil
+
+		} else {
+			return "", err
+		}
+	} else {
+		defer f.Close()
+
+		var key []byte
+
+		if stat, err := f.Stat(); err != nil {
+			return "", err
+		} else {
+			key = make([]byte, stat.Size())
+		}
+
+		if _, err := f.Read(key); err != nil {
+			return "", err
+		}
+
+		return string(key), nil
+	}
 }
 
 func LoadPermissions(home string) (*Permissions, error) {
@@ -105,13 +157,8 @@ func LoadPermissions(home string) (*Permissions, error) {
 			//If the permissions file doesn't exist,
 			//creating default permissions.
 			if os.IsNotExist(err) {
-				adminRole := [...]string{"admin"}
-				perms.SetRoles(DefaultAdmin, adminRole[:])
+				perms.SetRoles(DefaultAdmin, []string{"admin"})
 				perms.SetPassword(DefaultAdmin, "admin")
-
-				hubRole := [...]string{"hub"}
-				perms.SetRoles(DefaultHub, hubRole[:])
-				perms.SetPassword(DefaultHub, "hub")
 
 				perms.SetPassword(Anonymous, "")
 			}
@@ -122,6 +169,15 @@ func LoadPermissions(home string) (*Permissions, error) {
 				return nil, err
 			}
 		}
+	}
+
+	if instKey, err := LoadInstanceKey(home); err != nil {
+		return nil, err
+	} else {
+		perms.SetRoles(instKey, []string{"instance"})
+		perms.SetPassword(instKey, "")
+
+		perms.instanceKey = instKey
 	}
 
 	return &perms, nil
@@ -211,13 +267,20 @@ func (perms *Permissions) SetPassword(user string, password string) {
 }
 
 func (perms *Permissions) DeleteUser(user string) {
-	if perms.Users != nil && user != DefaultAdmin && user != DefaultHub && user != Anonymous {
+	if perms.Users != nil && user != DefaultAdmin && user != Anonymous {
 		delete(perms.Users, user)
 	}
 }
 
 func (perms *Permissions) Save(home string) error {
 	perms.checkInit()
+
+	defer func() {
+		perms.SetRoles(perms.instanceKey, []string{"instance"})
+		perms.SetPassword(perms.instanceKey, "")
+	}()
+
+	perms.DeleteUser(perms.instanceKey)
 
 	fileName := home + "/permissions"
 

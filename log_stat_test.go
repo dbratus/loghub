@@ -63,9 +63,6 @@ func (h *hubForStatTest) GetStats() map[string]*LogStat {
 func (h *hubForStatTest) ForEachLog(func(lhproto.ProtocolHandler)) {
 }
 
-func (h *hubForStatTest) SetCredentials(lhproto.Credentials) {
-}
-
 func (h *hubForStatTest) Close() {
 }
 

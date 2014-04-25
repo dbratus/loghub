@@ -6,7 +6,6 @@
 package main
 
 import (
-	"github.com/dbratus/loghub/auth"
 	"github.com/dbratus/loghub/lhproto"
 )
 
@@ -89,23 +88,9 @@ func (mh *hubProtocolHandler) Stat(cred *lhproto.Credentials, stats chan *lhprot
 }
 
 func (mh *hubProtocolHandler) User(cred *lhproto.Credentials, usr *lhproto.UserInfoJSON) {
-	if usr.Name == auth.DefaultHub {
-		mh.hub.SetCredentials(lhproto.Credentials{usr.Name, usr.Password})
-
-		mh.hub.ForEachLog(func(cli lhproto.ProtocolHandler) {
-			cli.User(cred, usr)
-		})
-	}
 }
 
 func (mh *hubProtocolHandler) Password(cred *lhproto.Credentials, pass *lhproto.PasswordJSON) {
-	if cred.User == auth.DefaultHub {
-		mh.hub.SetCredentials(lhproto.Credentials{cred.User, pass.Password})
-
-		mh.hub.ForEachLog(func(cli lhproto.ProtocolHandler) {
-			cli.Password(cred, pass)
-		})
-	}
 }
 
 func (mh *hubProtocolHandler) Close() {

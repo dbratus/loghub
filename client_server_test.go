@@ -155,8 +155,8 @@ func TestClientServer(t *testing.T) {
 		}
 	}
 
-	userRoles := [...]string{"role1", "role2"}
-	userCmd := lhproto.UserInfoJSON{"username", "password", true, userRoles[:], true}
+	userRoles := []string{"role1", "role2"}
+	userCmd := lhproto.UserInfoJSON{"username", "password", true, userRoles, true}
 	client.User(&cred, &userCmd)
 
 	select {

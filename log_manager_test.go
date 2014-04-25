@@ -29,7 +29,7 @@ func TestWriteReadLog(t *testing.T) {
 		tmpdir.Rm(home)
 	}()
 
-	sources := [...]string{"src1", "src2", "src3"}
+	sources := []string{"src1", "src2", "src3"}
 
 	entriesPerSource := 10
 	logManager = NewDefaultLogManager(home)
@@ -133,7 +133,7 @@ func TestTruncate(t *testing.T) {
 		tmpdir.Rm(home)
 	}()
 
-	sources := [...]string{"src1"}
+	sources := []string{"src1"}
 
 	entriesPerSource := 32
 	logManager = NewDefaultLogManager(home)
@@ -222,7 +222,7 @@ func TestTransfer(t *testing.T) {
 		tmpdir.Rm(altHome)
 	}()
 
-	sources := [...]string{"src1", "src2", "src3"}
+	sources := []string{"src1", "src2", "src3"}
 
 	entriesPerSource := 10
 	logManager = NewDefaultLogManager(home)

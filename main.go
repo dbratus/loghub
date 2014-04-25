@@ -170,7 +170,16 @@ func hubCommand(args []string) {
 		}
 	}
 
-	hub := NewDefaultHub(*useTLS, *trust)
+	var instanceKey string
+
+	if k, err := auth.LoadInstanceKey(*home); err != nil {
+		println("Failed to load instance key:", err.Error())
+		os.Exit(1)
+	} else {
+		instanceKey = k
+	}
+
+	hub := NewDefaultHub(*useTLS, *trust, instanceKey)
 
 	var stopLogStatReceiver func()
 

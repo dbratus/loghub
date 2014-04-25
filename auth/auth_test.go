@@ -12,37 +12,36 @@ import (
 )
 
 var actionsAllowed = map[string]string{
-	"reader": "read,pass",
-	"writer": "write,pass",
-	"hub":    "read,iread,transfer,accept,truncate,stat,user,pass",
-	"admin":  "read,truncate,stat,user,pass",
+	"reader":   "read,pass",
+	"writer":   "write,pass",
+	"instance": "write,read,iread,transfer,accept,truncate,stat,user,pass",
+	"admin":    "read,truncate,stat,user,pass",
 }
 
 var actionsDenied = map[string]string{
 	"reader":  "write,iread,transfer,accept,truncate,stat,user",
 	"writer":  "read,iread,transfer,accept,truncate,stat,user",
-	"hub":     "write",
 	"admin":   "write,iread,transfer,accept",
 	Anonymous: "read,write,iread,transfer,accept,truncate,stat,user,pass",
 }
 
 func setupPermissions(perms *Permissions) {
-	reader := [...]string{"reader"}
-	writer := [...]string{"writer"}
-	hub := [...]string{"hub"}
-	admin := [...]string{"admin"}
+	reader := []string{"reader"}
+	writer := []string{"writer"}
+	instance := []string{"instance"}
+	admin := []string{"admin"}
 
 	perms.SetPassword("reader", "reader_password")
-	perms.SetRoles("reader", reader[:])
+	perms.SetRoles("reader", reader)
 
 	perms.SetPassword("writer", "writer_password")
-	perms.SetRoles("writer", writer[:])
+	perms.SetRoles("writer", writer)
 
-	perms.SetPassword("hub", "hub_password")
-	perms.SetRoles("hub", hub[:])
+	perms.SetPassword("instance", "")
+	perms.SetRoles("instance", instance)
 
 	perms.SetPassword("admin", "admin_password")
-	perms.SetRoles("admin", admin[:])
+	perms.SetRoles("admin", admin)
 }
 
 func checkPermissions(perms *Permissions, user string, password string, isAllowed bool, permissions string, t *testing.T) {
@@ -60,17 +59,16 @@ func TestAuthenticationAuthorization(t *testing.T) {
 
 	checkPermissions(perms, "reader", "reader_password", true, actionsAllowed["reader"], t)
 	checkPermissions(perms, "writer", "writer_password", true, actionsAllowed["writer"], t)
-	checkPermissions(perms, "hub", "hub_password", true, actionsAllowed["hub"], t)
+	checkPermissions(perms, "instance", "", true, actionsAllowed["hub"], t)
 	checkPermissions(perms, "admin", "admin_password", true, actionsAllowed["admin"], t)
 
 	checkPermissions(perms, "reader", "wrong_password", false, actionsAllowed["reader"], t)
 	checkPermissions(perms, "writer", "wrong_password", false, actionsAllowed["writer"], t)
-	checkPermissions(perms, "hub", "wrong_password", false, actionsAllowed["hub"], t)
+	checkPermissions(perms, "instance", "wrong_password", false, actionsAllowed["hub"], t)
 	checkPermissions(perms, "admin", "wrong_password", false, actionsAllowed["admin"], t)
 
 	checkPermissions(perms, "reader", "reader_password", false, actionsDenied["reader"], t)
 	checkPermissions(perms, "writer", "writer_password", false, actionsDenied["writer"], t)
-	checkPermissions(perms, "hub", "hub_password", false, actionsDenied["hub"], t)
 	checkPermissions(perms, "admin", "admin_password", false, actionsDenied["admin"], t)
 	checkPermissions(perms, Anonymous, "", false, actionsDenied[Anonymous], t)
 
@@ -80,9 +78,9 @@ func TestAuthenticationAuthorization(t *testing.T) {
 	checkPermissions(perms, "reader", "reader_password", false, actionsAllowed["reader"], t)
 	checkPermissions(perms, "writer", "writer_password", false, actionsAllowed["writer"], t)
 
-	anonPerms := [...]string{"writer", "reader"}
+	anonPerms := []string{"writer", "reader"}
 	println("Setting anonimous roles")
-	perms.SetRoles(Anonymous, anonPerms[:])
+	perms.SetRoles(Anonymous, anonPerms)
 
 	checkPermissions(perms, Anonymous, "", true, "write", t)
 	checkPermissions(perms, Anonymous, "", true, "read", t)
@@ -113,6 +111,16 @@ func TestLoadSave(t *testing.T) {
 
 	checkPermissions(perms, "reader", "reader_password", true, actionsAllowed["reader"], t)
 	checkPermissions(perms, "writer", "writer_password", true, actionsAllowed["writer"], t)
-	checkPermissions(perms, "hub", "hub_password", true, actionsAllowed["hub"], t)
 	checkPermissions(perms, "admin", "admin_password", true, actionsAllowed["admin"], t)
+}
+
+func TestLoadInstanceKey(t *testing.T) {
+	home := tmpdir.GetPath("auth.test")
+
+	tmpdir.Make(home)
+	defer tmpdir.Rm(home)
+
+	if _, err := LoadInstanceKey(home); err != nil {
+		t.Errorf("Failed to load instance key:", err.Error())
+	}
 }
