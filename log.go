@@ -44,7 +44,7 @@ type LogStat struct {
 	Timestamp      int64
 	Size           int64
 	Limit          int64
-	Port           int
+	Addr           string
 	LastTransferId int64
 }
 

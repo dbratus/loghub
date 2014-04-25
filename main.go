@@ -15,7 +15,6 @@ import (
 	"github.com/dbratus/loghub/lhproto"
 	"github.com/dbratus/loghub/trace"
 	"github.com/howeyc/gopass"
-	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -94,15 +93,6 @@ func logCommand(args []string) {
 		trace.SetTraceLevel(trace.LevelDebug)
 	}
 
-	var port int
-
-	if addr, err := net.ResolveTCPAddr("tcp", *address); err != nil {
-		println("Failed to resolve the address:", err.Error(), ".")
-		os.Exit(1)
-	} else {
-		port = addr.Port
-	}
-
 	var cert *tls.Certificate = nil
 
 	if *certFile != "" && *keyFile != "" {
@@ -121,7 +111,7 @@ func logCommand(args []string) {
 	lastTransferId := new(int64)
 	limBytes := *lim * 1024 * 1024
 
-	if s, err := startLogStatSender(*hub, logManager, port, limBytes, lastTransferId, *statInerval); err != nil {
+	if s, err := startLogStatSender(*hub, logManager, *address, limBytes, lastTransferId, *statInerval); err != nil {
 		println("Failed to start the stat sender:", err.Error(), ".")
 		os.Exit(1)
 	} else {

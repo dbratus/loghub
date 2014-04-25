@@ -7,7 +7,6 @@ package main
 
 import (
 	"github.com/dbratus/loghub/lhproto"
-	"net"
 	"testing"
 	"time"
 )
@@ -50,7 +49,7 @@ type hubForStatTest struct {
 func (h *hubForStatTest) ReadLog([]*LogQuery, chan *LogEntry) {
 }
 
-func (h *hubForStatTest) SetLogStat(addr net.IP, stat *LogStat) {
+func (h *hubForStatTest) SetLogStat(stat *LogStat) {
 	h.stat <- stat
 }
 
@@ -73,11 +72,11 @@ func (h *hubForStatTest) Close() {
 func TestLogStatSenderReceiver(t *testing.T) {
 	logManager := &logManagerForStatTest{1000}
 
-	senderPort := 9999
+	senderAddress := "127.0.0.1:9999"
 	lim := int64(20000)
 	lastTransferId := new(int64)
 
-	if cl, err := startLogStatSender("127.0.0.1:10000", logManager, senderPort, lim, lastTransferId, time.Second); err != nil {
+	if cl, err := startLogStatSender("127.0.0.1:10000", logManager, senderAddress, lim, lastTransferId, time.Second); err != nil {
 		t.Errorf("Failed to start LogStat sender: %s.", err.Error())
 		t.FailNow()
 	} else {
@@ -98,8 +97,8 @@ func TestLogStatSenderReceiver(t *testing.T) {
 		t.Error("LogStat has not arrived.")
 		t.FailNow()
 	case stat := <-hub.stat:
-		if stat.Port != senderPort {
-			t.Errorf("Wrong LogStat port. Expected %d, got %d.", senderPort, stat.Port)
+		if stat.Addr != senderAddress {
+			t.Errorf("Wrong LogStat address. Expected %s, got %s.", senderAddress, stat.Addr)
 		}
 
 		if stat.Limit != lim {

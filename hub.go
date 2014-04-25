@@ -10,9 +10,7 @@ import (
 	"github.com/dbratus/loghub/balancer"
 	"github.com/dbratus/loghub/lhproto"
 	"github.com/dbratus/loghub/trace"
-	"net"
 	"runtime"
-	"strconv"
 	"sync/atomic"
 	"time"
 )
@@ -28,18 +26,13 @@ const (
 
 type Hub interface {
 	ReadLog([]*LogQuery, chan *LogEntry)
-	SetLogStat(net.IP, *LogStat)
+	SetLogStat(*LogStat)
 	Truncate(string, int64)
 	GetStats() map[string]*LogStat
 	ForEachLog(func(lhproto.ProtocolHandler))
 	SetCredentials(lhproto.Credentials)
 
 	Close()
-}
-
-type setLogStatCmd struct {
-	addr net.IP
-	stat *LogStat
 }
 
 type readLogMultiSrcCmd struct {
@@ -49,7 +42,7 @@ type readLogMultiSrcCmd struct {
 
 type defaultHub struct {
 	readChan           chan readLogMultiSrcCmd
-	statChan           chan setLogStatCmd
+	statChan           chan *LogStat
 	truncateChan       chan truncateLogCmd
 	getStatsChan       chan chan map[string]*LogStat
 	credChan           chan lhproto.Credentials
@@ -62,7 +55,7 @@ type defaultHub struct {
 func NewDefaultHub(useTLS bool, skipCertValidation bool) Hub {
 	h := &defaultHub{
 		make(chan readLogMultiSrcCmd),
-		make(chan setLogStatCmd),
+		make(chan *LogStat),
 		make(chan truncateLogCmd),
 		make(chan chan map[string]*LogStat),
 		make(chan lhproto.Credentials),
@@ -132,39 +125,37 @@ func (h *defaultHub) run() {
 		go ForwardLog(results, cmd.entries)
 	}
 
-	onSetLogStat := func(cmd setLogStatCmd) {
-		addr := cmd.addr.String() + ":" + strconv.Itoa(cmd.stat.Port)
+	onSetLogStat := func(stat *LogStat) {
+		hubTrace.Debugf("Got stat from %s: sz=%d, lim=%d, trid=%d.", stat.Addr, stat.Size, stat.Limit, stat.LastTransferId)
 
-		hubTrace.Debugf("Got stat from %s: sz=%d, lim=%d, trid=%d.", addr, cmd.stat.Size, cmd.stat.Limit, cmd.stat.LastTransferId)
+		if log, found := logs[stat.Addr]; found {
+			if stat.Timestamp > log.stat.Timestamp {
+				hubTrace.Debugf("Updating stat of %s.", stat.Addr)
 
-		if log, found := logs[addr]; found {
-			if cmd.stat.Timestamp > log.stat.Timestamp {
-				hubTrace.Debugf("Updating stat of %s.", addr)
-
-				log.stat = cmd.stat
+				log.stat = stat
 				log.timeout = time.Now().Add(logCloseTimeout)
 
-				logBalancer.UpdateHost(addr, cmd.stat.Size, cmd.stat.Limit)
+				logBalancer.UpdateHost(stat.Addr, stat.Size, stat.Limit)
 
-				if log.lastTransferId != cmd.stat.LastTransferId {
-					hubTrace.Debugf("Transfer %d at %s complete.", cmd.stat.LastTransferId, addr)
+				if log.lastTransferId != stat.LastTransferId {
+					hubTrace.Debugf("Transfer %d at %s complete.", stat.LastTransferId, stat.Addr)
 
-					log.lastTransferId = cmd.stat.LastTransferId
-					logBalancer.TransferComplete(cmd.stat.LastTransferId)
+					log.lastTransferId = stat.LastTransferId
+					logBalancer.TransferComplete(stat.LastTransferId)
 				}
 			}
 		} else {
-			hubTrace.Debugf("Creating stat of %s.", addr)
+			hubTrace.Debugf("Creating stat of %s.", stat.Addr)
 
-			logs[addr] = &logInfo{
-				cmd.stat,
-				lhproto.NewClient(addr, maxConnectionsPerClient, h.useTLS, h.skipCertValidation),
+			logs[stat.Addr] = &logInfo{
+				stat,
+				lhproto.NewClient(stat.Addr, maxConnectionsPerClient, h.useTLS, h.skipCertValidation),
 				time.Now().Add(logCloseTimeout),
 				new(int32),
-				cmd.stat.LastTransferId,
+				stat.LastTransferId,
 			}
 
-			logBalancer.UpdateHost(addr, cmd.stat.Size, cmd.stat.Limit)
+			logBalancer.UpdateHost(stat.Addr, stat.Size, stat.Limit)
 		}
 	}
 
@@ -249,9 +240,9 @@ func (h *defaultHub) run() {
 				onRead(cmd)
 			}
 
-		case cmd, ok := <-h.statChan:
+		case stat, ok := <-h.statChan:
 			if ok {
-				onSetLogStat(cmd)
+				onSetLogStat(stat)
 			}
 
 		case cmd, ok := <-h.truncateChan:
@@ -302,8 +293,8 @@ func (h *defaultHub) run() {
 	}
 }
 
-func (h *defaultHub) SetLogStat(addr net.IP, stat *LogStat) {
-	h.statChan <- setLogStatCmd{addr, stat}
+func (h *defaultHub) SetLogStat(stat *LogStat) {
+	h.statChan <- stat
 }
 
 func (h *defaultHub) ReadLog(queries []*LogQuery, entries chan *LogEntry) {

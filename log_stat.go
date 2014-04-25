@@ -19,7 +19,7 @@ var (
 	logStatReceiverTrace = trace.New("LogStatReceiver")
 )
 
-func startLogStatSender(hubAddr string, log LogManager, port int, lim int64, lastTransferId *int64, sendInterval time.Duration) (func(), error) {
+func startLogStatSender(hubAddr string, log LogManager, addr string, lim int64, lastTransferId *int64, sendInterval time.Duration) (func(), error) {
 	closeChan := make(chan chan bool)
 
 	var hubAddrUdp *net.UDPAddr
@@ -46,7 +46,7 @@ func startLogStatSender(hubAddr string, log LogManager, port int, lim int64, las
 				timeToTimestamp(time.Now()),
 				log.Size(),
 				lim,
-				port,
+				addr,
 				atomic.LoadInt64(lastTransferId),
 			}
 			encoder := gob.NewEncoder(msgBuf)
@@ -57,7 +57,7 @@ func startLogStatSender(hubAddr string, log LogManager, port int, lim int64, las
 				if _, err := conn.WriteToUDP(msgBuf.Bytes(), hubAddrUdp); err != nil {
 					logStatSenderTrace.Errorf("Failed to write LogStat: %s.", err.Error())
 				} else {
-					logStatSenderTrace.Debugf("Stat sent: sz=%d, lim=%d, trid=%d.", stat.Size, stat.Limit, stat.LastTransferId)
+					logStatSenderTrace.Debugf("Stat sent to %s: sz=%d, lim=%d, trid=%d.", hubAddrUdp.String(), stat.Size, stat.Limit, stat.LastTransferId)
 				}
 			}
 
@@ -108,7 +108,7 @@ func startLogStatReceiver(addr string, hub Hub) (func(), error) {
 
 	go func() {
 		for {
-			if n, senderAddr, err := conn.ReadFromUDP(buf); err == nil {
+			if n, _, err := conn.ReadFromUDP(buf); err == nil {
 				msgBuf := bytes.NewBuffer(buf[:n])
 				decoder := gob.NewDecoder(msgBuf)
 
@@ -117,8 +117,8 @@ func startLogStatReceiver(addr string, hub Hub) (func(), error) {
 				if err := decoder.Decode(&stat); err != nil {
 					logStatReceiverTrace.Errorf("Failed to decode LogStat: %s.", err.Error())
 				} else {
-					logStatReceiverTrace.Debugf("Stat received from %s: sz=%d, lim=%d, trid=%d.", senderAddr.IP.String(), stat.Size, stat.Limit, stat.LastTransferId)
-					hub.SetLogStat(senderAddr.IP, &stat)
+					logStatReceiverTrace.Debugf("Stat received from %s: sz=%d, lim=%d, trid=%d.", stat.Addr, stat.Size, stat.Limit, stat.LastTransferId)
+					hub.SetLogStat(&stat)
 				}
 
 			} else {
