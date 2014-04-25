@@ -23,16 +23,12 @@ go get github.com/dbratus/loghub
 To start log, run LogHub with 'log' command:
 
 ```
-loghub log -listen 127.0.0.1:10000 -home /var/loghub -hub 127.0.0.1:9999 -lim 10240
+loghub log -listen 192.168.1.101:10000 -home /var/loghub -hub 192.168.1.100:9999 -lim 10240
 ```
 
-This command starts a 10Gb log, accepting connections at port 10000, storing the data at '/var/loghub' and sending notifications to the hub at 127.0.0.1:9999.
+This command starts a 10Gb log, bound to '192.168.1.101:10000' address and port, storing the data at '/var/loghub' and sending notifications to the hub at 192.168.1.100:9999.
 
-Loopback addresses may be omitted, so the shorter form of the command will be:
-
-```
-loghub log -listen :10000 -home /var/loghub -hub :9999 -lim 10240
-```
+You should always specify the remote address in the 'listen' parameter, because this is the address which the hub will try to connect.
 
 To start hub, run LogHub with 'hub' command:
 
@@ -49,7 +45,7 @@ For user authentication LogHub attaches passwords to messages, so, if you care a
 To work in TLS mode, log and hub need a certificate and a private key in PEM format. Having these files, you can specify them as parameters to LogHub:
 
 ```
-loghub log -listen 127.0.0.1:10000 -home /var/loghub -hub 127.0.0.1:9999 -lim 10240 -cert cert.pem -key privkey.pem
+loghub log -listen 192.168.1.101:10000 -home /var/loghub -hub 192.168.1.100:9999 -lim 10240 -cert cert.pem -key privkey.pem
 ```
 
 The 'hub' command accepts the same 'cert' and 'key' parameters, but additionally it needs 'tls' flag to know that the logs also work in TLS mode.
