@@ -22,6 +22,7 @@ for i in range(1, LOGS_COUNT+1):
 		'-home', LOG_BASE + 'log' + str(i),
 		'-cert', 'cert.pem',
 		'-key', 'testkey.pem',
+		'-tls', '-trust',
 		'-hub', ':' + str(STAT_PORT),
 		'-lim', str(log_lim)])
 

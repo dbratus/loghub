@@ -14,13 +14,15 @@ import (
 var logProtocolHanderTrace = trace.New("LogProtocolHander")
 
 type logProtocolHandler struct {
-	logManager     LogManager
-	lastTransferId *int64
-	limit          int64
+	logManager         LogManager
+	lastTransferId     *int64
+	limit              int64
+	useTLS             bool
+	skipCertValidation bool
 }
 
-func NewLogProtocolHandler(logManager LogManager, lastTransferId *int64, limit int64) lhproto.ProtocolHandler {
-	return &logProtocolHandler{logManager, lastTransferId, limit}
+func NewLogProtocolHandler(logManager LogManager, lastTransferId *int64, limit int64, useTLS bool, skipCertValidation bool) lhproto.ProtocolHandler {
+	return &logProtocolHandler{logManager, lastTransferId, limit, useTLS, skipCertValidation}
 }
 
 func (mh *logProtocolHandler) Write(cred *lhproto.Credentials, entries chan *lhproto.IncomingLogEntryJSON) {
@@ -84,7 +86,7 @@ func (mh *logProtocolHandler) Transfer(cred *lhproto.Credentials, cmd *lhproto.T
 	logProtocolHanderTrace.Debugf("Got transfer of %d to %s, id %d.", cmd.Lim, cmd.Addr, cmd.Id)
 
 	lim := cmd.Lim
-	cli := lhproto.NewClient(cmd.Addr, 1, false, false)
+	cli := lhproto.NewClient(cmd.Addr, 1, mh.useTLS, mh.skipCertValidation)
 	defer cli.Close()
 
 	for {

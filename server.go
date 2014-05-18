@@ -136,6 +136,10 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 		var cred lhproto.Credentials
 
 		if err := reader.ReadJSON(&header); err != nil {
+			if err != jstream.ErrStreamDelimiter && err != io.EOF {
+				serverTrace.Errorf("Failed to read message header: %s.", err.Error())
+			}
+
 			conn.Close()
 			break
 		}
@@ -163,6 +167,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 					close(entChan)
 
 					if err != jstream.ErrStreamDelimiter {
+						serverTrace.Errorf("Failed to read message: %s.", err.Error())
+
 						conn.Close()
 						return
 					}
@@ -188,6 +194,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 			for ent := range entChan {
 				if continueWriting {
 					if err := writer.WriteJSON(ent); err != nil {
+						serverTrace.Errorf("Failed to write message: %s.", err.Error())
+
 						conn.Close()
 						continueWriting = false
 					}
@@ -214,6 +222,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 			for ent := range entChan {
 				if continueWriting {
 					if err := writer.WriteJSON(ent); err != nil {
+						serverTrace.Errorf("Failed to write message: %s.", err.Error())
+
 						conn.Close()
 						continueWriting = false
 					}
@@ -228,6 +238,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 			var cmd lhproto.TruncateJSON
 
 			if err := reader.ReadJSON(&cmd); err != nil {
+				serverTrace.Errorf("Failed to read message: %s.", err.Error())
+
 				conn.Close()
 				return
 			}
@@ -238,6 +250,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 			var cmd lhproto.TransferJSON
 
 			if err := reader.ReadJSON(&cmd); err != nil {
+				serverTrace.Errorf("Failed to read message: %s.", err.Error())
+
 				conn.Close()
 				return
 			}
@@ -248,6 +262,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 			var cmd lhproto.AcceptJSON
 
 			if err := reader.ReadJSON(&cmd); err != nil {
+				serverTrace.Errorf("Failed to read message: %s.", err.Error())
+
 				conn.Close()
 				return
 			}
@@ -264,6 +280,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 					close(entChan)
 
 					if err != jstream.ErrStreamDelimiter {
+						serverTrace.Errorf("Failed to read message: %s.", err.Error())
+
 						conn.Close()
 						return
 					}
@@ -277,6 +295,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 			result := <-resultChan
 
 			if err := writer.WriteJSON(result); err != nil {
+				serverTrace.Errorf("Failed to write message: %s.", err.Error())
+
 				conn.Close()
 				return
 			}
@@ -291,6 +311,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 			for stat := range statChan {
 				if continueWriting {
 					if err := writer.WriteJSON(stat); err != nil {
+						serverTrace.Errorf("Failed to write message: %s.", err.Error())
+
 						conn.Close()
 						continueWriting = false
 					}
@@ -305,6 +327,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 			var cmd lhproto.UserInfoJSON
 
 			if err := reader.ReadJSON(&cmd); err != nil {
+				serverTrace.Errorf("Failed to read message: %s.", err.Error())
+
 				conn.Close()
 				return
 			}
@@ -319,6 +343,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 			var cmd lhproto.PasswordJSON
 
 			if err := reader.ReadJSON(&cmd); err != nil {
+				serverTrace.Errorf("Failed to read message: %s.", err.Error())
+
 				conn.Close()
 				return
 			}
@@ -341,6 +367,7 @@ func readLogQueryJSONChannel(reader jstream.Reader, handler lhproto.ProtocolHand
 			close(qChan)
 
 			if err != jstream.ErrStreamDelimiter {
+				serverTrace.Errorf("Failed to read message: %s.", err.Error())
 				return false
 			}
 
