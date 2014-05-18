@@ -70,6 +70,8 @@ func logCommand(args []string) {
 	statInerval := flags.Duration("stat", time.Second*10, "Status sending interval.")
 	certFile := flags.String("cert", "", "TLS certificate PEM file.")
 	keyFile := flags.String("key", "", "Private key PEM file.")
+	useTLS := flags.Bool("tls", false, "Whether to use TLS protocol to connect logs.")
+	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 	debug := flags.Bool("debug", false, "Write debug information.")
 
 	flags.Parse(args)
@@ -120,7 +122,7 @@ func logCommand(args []string) {
 
 	var stopServer func()
 
-	if s, err := startServer(*address, NewLogProtocolHandler(logManager, lastTransferId, limBytes), cert, *home); err != nil {
+	if s, err := startServer(*address, NewLogProtocolHandler(logManager, lastTransferId, limBytes, *useTLS, *trust), cert, *home); err != nil {
 		println("Failed to start the server:", err.Error(), ".")
 		os.Exit(1)
 	} else {

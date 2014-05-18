@@ -9,17 +9,6 @@ LOGS_COUNT = 10
 BASE_PORT = 10000
 STAT_PORT = 9999
 
-#Starting hub.
-hub_proc = subprocess.Popen([
-	'loghub', 'hub', 
-	#'-debug',
-	'-home', LOG_BASE + 'hub',
-	'-cert', 'cert.pem',
-	'-key', 'testkey.pem',
-	'-tls', '-trust',
-	'-listen', ':' + str(BASE_PORT), 
-	'-stat', ':' + str(STAT_PORT)])
-
 #Starting logs.
 log_procs = []
 log_lim = 1
@@ -32,11 +21,23 @@ for i in range(1, LOGS_COUNT+1):
 		'-home', LOG_BASE + 'log' + str(i),
 		'-cert', 'cert.pem',
 		'-key', 'testkey.pem',
+		'-tls', '-trust',
 		'-hub', ':' + str(STAT_PORT),
 		'-lim', str(log_lim)])
 
 	log_procs.append(log_proc)
 	log_lim *= 2
+
+#Starting hub.
+hub_proc = subprocess.Popen([
+	'loghub', 'hub', 
+	#'-debug',
+	'-home', LOG_BASE + 'hub',
+	'-cert', 'cert.pem',
+	'-key', 'testkey.pem',
+	'-tls', '-trust',
+	'-listen', ':' + str(BASE_PORT), 
+	'-stat', ':' + str(STAT_PORT)])
 
 def write_some_log(log_proc_num, min_cnt, max_cnt):
 	writer_proc = subprocess.Popen([
