@@ -14,7 +14,7 @@ import (
 
 const readTimeout = time.Second * 30
 const writeTimeout = time.Second * 30
-const maxConnections = 50
+const maxConnections = 30
 const dateTimeFormat = "2006-01-02 15:04:05"
 
 var webuiTrace = trace.New("WebUI")
@@ -81,9 +81,11 @@ func logHandler(client lhproto.ProtocolHandler) func(http.ResponseWriter, *http.
 		userParam := req.FormValue("user")
 		passwordParam := req.FormValue("password")
 
+		webuiTrace.Debugf("Getting log by %s.", req.RequestURI)
+
 		var from, to time.Time
 
-		if t, err := time.Parse(dateTimeFormat, fromParam); err != nil {
+		if t, err := time.ParseInLocation(dateTimeFormat, fromParam, time.Local); err != nil {
 			webuiTrace.Errorf("Failed to parse date: %s.", err.Error())
 			resp.WriteHeader(500)
 			return
@@ -122,7 +124,11 @@ func logHandler(client lhproto.ProtocolHandler) func(http.ResponseWriter, *http.
 			maxSev = int(sev)
 		}
 
-		sources := strings.Split(sourcesParam, "\n")
+		var sources []string = nil
+
+		if sourcesParam != "" {
+			sources = strings.Split(sourcesParam, "\n")
+		}
 
 		if userParam == "" {
 			userParam = auth.Anonymous
@@ -134,7 +140,7 @@ func logHandler(client lhproto.ProtocolHandler) func(http.ResponseWriter, *http.
 
 		client.Read(&cred, queries, results)
 
-		if len(sources) == 0 {
+		if sources == nil {
 			queries <- &lhproto.LogQueryJSON{from.UnixNano(), to.UnixNano(), minSev, maxSev, ""}
 		} else {
 			for _, s := range sources {
@@ -144,17 +150,23 @@ func logHandler(client lhproto.ProtocolHandler) func(http.ResponseWriter, *http.
 
 		close(queries)
 
-		keywords := strings.Split(keywordsParam, "\n")
-		keywordsRegEx := make([]*regexp.Regexp, len(keywords))
+		var keywordsRegEx []*regexp.Regexp = nil
 
-		for i, kw := range keywords {
-			if re, err := regexp.Compile(strings.Trim(kw, " ")); err == nil {
-				keywordsRegEx[i] = re
+		if keywordsParam != "" {
+			keywords := strings.Split(keywordsParam, "\n")
+			keywordsRegEx = make([]*regexp.Regexp, len(keywords))
+
+			for i, kw := range keywords {
+				if re, err := regexp.Compile(strings.Trim(kw, " ")); err == nil {
+					keywordsRegEx[i] = re
+				}
 			}
 		}
 
 		resp.Header().Add("Content-Type", "application/json; charset=utf-8")
 		resp.Write([]byte("["))
+
+		webuiTrace.Debugf("Reading results for:\nfrom=%s\nto=%s\nminSev=%d\nmaxSev=%d", from.String(), to.String(), minSev, maxSev)
 
 		isFirst := true
 		cnt := 0
@@ -163,9 +175,11 @@ func logHandler(client lhproto.ProtocolHandler) func(http.ResponseWriter, *http.
 		for ent := range results {
 			msgMatch := true
 
-			for _, re := range keywordsRegEx {
-				if re != nil && !re.MatchString(ent.Msg) {
-					msgMatch = false
+			if keywordsRegEx != nil {
+				for _, re := range keywordsRegEx {
+					if re != nil && !re.MatchString(ent.Msg) {
+						msgMatch = false
+					}
 				}
 			}
 
