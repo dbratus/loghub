@@ -238,7 +238,7 @@ func getCommand(args []string) {
 	if *baseStr == "" {
 		base = time.Now()
 	} else {
-		if t, err := time.Parse(dateTimeFormat, *baseStr); err != nil {
+		if t, err := time.ParseInLocation(dateTimeFormat, *baseStr, time.Local); err != nil {
 			println("Base date/time is not in correct format. Must be 'YYYY-MM-DD hh:mm:ss'.")
 			os.Exit(1)
 		} else {
