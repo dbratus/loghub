@@ -1,0 +1,102 @@
+body {
+	margin-top: 10px;
+}
+
+pre {
+	margin: 0px;
+	padding: 0px;
+}
+
+label {
+	font-family: Arial;
+	color: gray;
+}
+
+.error {
+	background: aquamarine;
+}
+
+.label {
+	margin-bottom: 5px;
+}
+
+.content {
+	width: 800px;
+	margin-left: auto;
+	margin-right: auto;
+}
+
+.panel {
+	position: relative;
+	background-color: yellow;
+}
+
+.left-panel {
+	position: absolute;
+	left: -210px;
+	padding: 10px;
+	width: 180px;
+}
+
+.right-panel {
+	position: absolute;
+	left: 810px;
+	padding: 10px;
+	width: 180px;
+}
+
+.log {
+	position: relative;
+	padding: 10px;
+}
+
+.left-panel, .right-panel, .log {
+	border: 1px solid lightgray;
+	border-radius: 2px;
+}
+
+.filter-control {
+	font-family: Tahoma, Arial;
+	padding: 3px;
+	border: 1px solid gray;
+	border-radius: 2px;
+	font-size: 11pt;
+}
+
+.filter-line {
+	margin-bottom: 15px;
+}
+
+.filter-buttons {
+	text-align: right;
+}
+
+.filter-button {
+	font-size: 12pt;
+	font-family: Arial;
+	padding: 5px;
+	border-radius: 4px;
+	background: lightgray;
+}
+
+.time-control {
+	width: 170px;
+}
+
+.range-control {
+	width: 170px;
+	margin-bottom: 5px;
+}
+
+.range-unit {
+	margin-left: 10px;
+}
+
+.sev-control {
+	width: 30px;
+}
+
+.filter-textarea {
+	width: 170px;
+	height: 120px;
+}

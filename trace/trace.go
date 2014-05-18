@@ -79,8 +79,7 @@ func run() {
 
 func write(ent *traceEntry) {
 	ts := ent.timestamp.Format("2006-01-02 15:04:05.999")
-
-	fmt.Fprintf(os.Stderr, "%s [%s] %s: %s\n", ts, ent.source, severityNames[ent.severity], ent.message)
+	fmt.Fprintf(os.Stderr, "%s [%d:%s] %s: %s\n", ts, os.Getpid(), ent.source, severityNames[ent.severity], ent.message)
 }
 
 func SetTraceLevel(level int) {

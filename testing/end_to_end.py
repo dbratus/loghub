@@ -3,22 +3,12 @@ import sys
 import json
 import random
 import io
+import time
 
 LOG_BASE='/var/loghub/'
 LOGS_COUNT = 10
 BASE_PORT = 10000
 STAT_PORT = 9999
-
-#Starting hub.
-hub_proc = subprocess.Popen([
-	'loghub', 'hub', 
-	#'-debug',
-	'-home', LOG_BASE + 'hub',
-	'-cert', 'cert.pem',
-	'-key', 'testkey.pem',
-	'-tls', '-trust',
-	'-listen', ':' + str(BASE_PORT), 
-	'-stat', ':' + str(STAT_PORT)])
 
 #Starting logs.
 log_procs = []
@@ -37,6 +27,30 @@ for i in range(1, LOGS_COUNT+1):
 
 	log_procs.append(log_proc)
 	log_lim *= 2
+
+time.sleep(1)
+
+#Starting hub.
+hub_proc = subprocess.Popen([
+	'loghub', 'hub', 
+	#'-debug',
+	'-home', LOG_BASE + 'hub',
+	'-cert', 'cert.pem',
+	'-key', 'testkey.pem',
+	'-tls', '-trust',
+	'-listen', ':' + str(BASE_PORT), 
+	'-stat', ':' + str(STAT_PORT)])
+
+time.sleep(1)
+
+#Starting ui.
+ui_proc = subprocess.Popen([
+	'loghub', 'ui', 
+	'-debug',
+	'-addr', ':' + str(BASE_PORT),
+	'-cert', 'cert.pem',
+	'-key', 'testkey.pem',
+	'-tls', '-trust'])
 
 def write_some_log(log_proc_num, min_cnt, max_cnt):
 	writer_proc = subprocess.Popen([
@@ -89,3 +103,6 @@ finally:
 	#Terminating logs.
 	for p in log_procs:
 		p.terminate()
+
+	#Terminating ui.
+	ui_proc.terminate()

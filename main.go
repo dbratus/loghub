@@ -14,6 +14,7 @@ import (
 	"github.com/dbratus/loghub/auth"
 	"github.com/dbratus/loghub/lhproto"
 	"github.com/dbratus/loghub/trace"
+	"github.com/dbratus/loghub/webui"
 	"github.com/howeyc/gopass"
 	"os"
 	"os/signal"
@@ -26,6 +27,7 @@ const dateTimeFormat = "2006-01-02 15:04:05"
 var commands = map[string]func([]string){
 	"log":      logCommand,
 	"hub":      hubCommand,
+	"ui":       uiCommand,
 	"get":      getCommand,
 	"put":      putCommand,
 	"truncate": truncateCommand,
@@ -51,6 +53,7 @@ func printCommands() {
 	fmt.Println("Commands:")
 	fmt.Println("  log       Starts log.")
 	fmt.Println("  hub       Starts hub.")
+	fmt.Println("  ui        Starts web UI.")
 	fmt.Println("  get       Gets log entries from log or hub.")
 	fmt.Println("  put       Puts log entries to log or hub.")
 	fmt.Println("  truncate  Truncates the log.")
@@ -207,6 +210,25 @@ func hubCommand(args []string) {
 		stopLogStatReceiver()
 		break
 	}
+}
+
+func uiCommand(args []string) {
+	flags := flag.NewFlagSet("ui", flag.ExitOnError)
+	listenAddr := flags.String("http", ":8080", "Address and port to listen.")
+	address := flags.String("addr", ":10000", "Address and port of a log or hub.")
+	certFile := flags.String("cert", "", "TLS certificate PEM file.")
+	keyFile := flags.String("key", "", "Private key PEM file.")
+	useTLS := flags.Bool("tls", false, "Whether to use TLS protocol to connect logs.")
+	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
+	debug := flags.Bool("debug", false, "Write debug information.")
+
+	flags.Parse(args)
+
+	if *debug {
+		trace.SetTraceLevel(trace.LevelDebug)
+	}
+
+	webui.Start(*listenAddr, *certFile, *keyFile, *address, *useTLS, *trust)
 }
 
 func getCommand(args []string) {

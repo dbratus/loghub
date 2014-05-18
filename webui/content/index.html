@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<link rel="stylesheet" href="/css/styles.css">
+		<script src="https://code.jquery.com/jquery-1.11.1.min.js" type="text/javascript"></script>
+	</head>
+	<body>
+		<div class="content">
+			<div class="panel">
+				<div class="left-panel">
+					<div class="filter-line">
+						<div class="label"><label>From:</label></div>
+						<input id="date-from" type="text" class="filter-control time-control" value="" maxlength="10">
+						<input id="time-from" type="text" class="filter-control time-control" value="" maxlength="8">
+					</div>
+					<div class="filter-line">
+						<div class="label"><label>Range:</label></div>
+						<input id="range" type="text" class="filter-control range-control" value="-1" maxlength="16">
+						<input id="range-unit-s" type="radio" name="range-units" class="range-unit" value="s">
+						<label for="range-unit-s">s</label>
+						<input id="range-unit-m" type="radio" name="range-units" class="range-unit" checked value="m">
+						<label for="range-unit-m">m</label>
+						<input id="range-unit-h" type="radio" name="range-units" class="range-unit" value="h">
+						<label for="range-unit-h">h</label>
+						<input id="range-unit-d" type="radio" name="range-units" class="range-unit" value="d">
+						<label for="range-unit-d">d</label>
+					</div>
+					<div class="filter-line">
+						<div class="label"><label>Severity:</label></div>
+						<input id="min-sev" type="text" class="filter-control sev-control" value="0" maxlength="3">&nbsp;-&nbsp;
+						<input id="max-sev" type="text" class="filter-control sev-control" value="255" maxlength="3">
+					</div>
+					<div class="filter-buttons">
+						<button id="follow-button" class="filter-button">Follow</button>
+						<button class="filter-button search-button">Search</button>
+					</div>
+				</div>
+				<div class="right-panel">
+					<div class="filter-line">
+						<div class="label"><label>Sources:</label></div>
+						<textarea id="sources" class="filter-control filter-textarea" maxlength="1024"></textarea>
+					</div>
+					<div class="filter-line">
+						<div class="label"><label>Keywords:</label></div>
+						<textarea id="keywords" class="filter-control filter-textarea" maxlength="1024"></textarea>
+					</div>
+					<div class="filter-buttons">
+						<button class="filter-button search-button">Search</button>
+					</div>
+				</div>
+			</div>
+			<div class="log">
+			</div>
+		</div>
+
+		<script src="/js/app.js" type="text/javascript" charset="utf-8"></script>
+	</body>
+</html>
