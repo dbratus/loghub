@@ -29,6 +29,7 @@ func Start(listenAddr string, certFile string, keyFile string, addr string, useT
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/log", logHandler(lhproto.NewClient(addr, maxConnections, useTLS, skipCertValidation)))
 	http.HandleFunc("/css/", staticHandler)
+	http.HandleFunc("/img/", staticHandler)
 	http.HandleFunc("/js/", staticHandler)
 
 	if certFile != "" && keyFile != "" {

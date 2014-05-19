@@ -1,6 +1,7 @@
 (function (){
 	$(document).ready(function () {
 		setFromNow();
+		setLogSize();
 
 		$('.search-button').click(function () {
 			var from = getFrom(),
@@ -11,6 +12,10 @@
 				keywords = getKeywords();
 
 			if (from && range && minSev && maxSev) {
+				$('.log').
+					empty().
+					append('<img src="/img/loading.gif" class="loading">');
+
 				$.get('log', {
 					from: from,
 					range: range,
@@ -18,14 +23,60 @@
 					maxSev: maxSev,
 					sources: sources,
 					keywords: keywords
-				}).done(function () {
-					alert('ok');
-				}).fail(function() {
-					alert('error');
+				}).done(function (data) {
+					var log = $('.log').empty(),
+						i;
+
+					for (i = 0; i < data.length; i++) {
+						log.append(
+							$('<pre></pre>').text(
+								formatLogEntry(data[i])
+							)
+						);
+					}
+				}).fail(function(result) {
+					$('.log').empty().append(
+						$('<pre></pre>').text(
+							result.status + ': ' + result.statusText
+						)
+					);
 				});
 			}
 		});
+
+		$('.now-button').click(function() {
+			setFromNow();
+		});
 	});
+
+	$(window).resize(function (){
+		setLogSize();
+	});
+
+	function setLogSize() {
+		var log = $('.log'),
+			logPadding = parseInt(log.css('padding')),
+			bodyMargin = parseInt($('body').css('margin-top')),
+			windowHeight = $(window).innerHeight();
+
+		log.css('height', (windowHeight - 2*bodyMargin - 2*logPadding) + 'px');
+	}
+
+	function formatLogEntry(ent) {
+		var ts = new Date(Math.floor(ent.Ts / 1000000))
+
+		return String.prototype.concat(
+			ts.toLocaleDateString(),
+			' ',
+			ts.toLocaleTimeString(),
+			' [',
+			ent.Src,
+			'] ',
+			ent.Sev,
+			': ',
+			ent.Msg
+		);
+	}
 
 	function setFromNow() {
 		var now = new Date();

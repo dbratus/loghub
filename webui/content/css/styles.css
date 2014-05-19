@@ -12,6 +12,10 @@ label {
 	color: gray;
 }
 
+img {
+	border: 0;
+}
+
 .error {
 	background: aquamarine;
 }
@@ -48,6 +52,7 @@ label {
 .log {
 	position: relative;
 	padding: 10px;
+	overflow: scroll;
 }
 
 .left-panel, .right-panel, .log {
@@ -76,7 +81,12 @@ label {
 	font-family: Arial;
 	padding: 5px;
 	border-radius: 4px;
-	background: lightgray;
+}
+
+.now-button {
+	font-size: 10pt;
+	font-family: Arial;
+	border-radius: 2px;
 }
 
 .time-control {
@@ -99,4 +109,9 @@ label {
 .filter-textarea {
 	width: 170px;
 	height: 120px;
+}
+
+.loading {
+	margin-left: 384px;
+	margin-top: 50px;
 }

@@ -47,7 +47,7 @@ time.sleep(1)
 #Starting ui.
 ui_proc = subprocess.Popen([
 	'loghub', 'ui', 
-	'-debug',
+	#'-debug',
 	'-addr', 'localhost:' + str(BASE_PORT),
 	'-cert', 'cert.pem',
 	'-key', 'testkey.pem',
