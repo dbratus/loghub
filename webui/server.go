@@ -2,6 +2,7 @@ package webui
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/dbratus/loghub/auth"
 	"github.com/dbratus/loghub/lhproto"
 	"github.com/dbratus/loghub/trace"
@@ -16,6 +17,7 @@ const readTimeout = time.Second * 30
 const writeTimeout = time.Second * 30
 const maxConnections = 30
 const dateTimeFormat = "2006-01-02 15:04:05"
+const logEntryForamt = "%s [%s] %d: %s\n"
 
 var webuiTrace = trace.New("WebUI")
 
@@ -81,6 +83,7 @@ func logHandler(client lhproto.ProtocolHandler) func(http.ResponseWriter, *http.
 		keywordsParam := req.FormValue("keywords")
 		userParam := req.FormValue("user")
 		passwordParam := req.FormValue("password")
+		textParam := req.FormValue("text")
 
 		webuiTrace.Debugf("Getting log by %s.", req.RequestURI)
 
@@ -164,44 +167,88 @@ func logHandler(client lhproto.ProtocolHandler) func(http.ResponseWriter, *http.
 			}
 		}
 
-		resp.Header().Add("Content-Type", "application/json; charset=utf-8")
-		resp.Write([]byte("["))
-
 		webuiTrace.Debugf("Reading results for:\nfrom=%s\nto=%s\nminSev=%d\nmaxSev=%d", from.String(), to.String(), minSev, maxSev)
 
-		isFirst := true
-		cnt := 0
-		cntReturned := 0
+		if textParam != "" {
+			writeText(resp, results, keywordsRegEx)
+		} else {
+			writeJSON(resp, results, keywordsRegEx)
+		}
+	}
+}
 
-		for ent := range results {
-			msgMatch := true
+func writeJSON(resp http.ResponseWriter, results chan *lhproto.OutgoingLogEntryJSON, keywordsRegEx []*regexp.Regexp) {
+	resp.Header().Add("Content-Type", "application/json; charset=utf-8")
+	resp.Write([]byte("["))
 
-			if keywordsRegEx != nil {
-				for _, re := range keywordsRegEx {
-					if re != nil && !re.MatchString(ent.Msg) {
-						msgMatch = false
-					}
+	isFirst := true
+	cnt := 0
+	cntReturned := 0
+
+	for ent := range results {
+		msgMatch := true
+
+		if keywordsRegEx != nil {
+			for _, re := range keywordsRegEx {
+				if re != nil && !re.MatchString(ent.Msg) {
+					msgMatch = false
 				}
 			}
-
-			if msgMatch {
-				if !isFirst {
-					resp.Write([]byte(","))
-				}
-
-				if bts, err := json.Marshal(ent); err == nil {
-					resp.Write(bts)
-					cntReturned++
-				}
-			}
-
-			isFirst = false
-			cnt++
 		}
 
-		webuiTrace.Debugf("%d entries read.", cnt)
-		webuiTrace.Debugf("%d entries returned.", cntReturned)
+		if msgMatch {
+			if !isFirst {
+				resp.Write([]byte(","))
+			}
 
-		resp.Write([]byte("]"))
+			if bts, err := json.Marshal(ent); err == nil {
+				resp.Write(bts)
+				cntReturned++
+			}
+		}
+
+		isFirst = false
+		cnt++
 	}
+
+	webuiTrace.Debugf("%d entries read.", cnt)
+	webuiTrace.Debugf("%d entries returned.", cntReturned)
+
+	resp.Write([]byte("]"))
+}
+
+func writeText(resp http.ResponseWriter, results chan *lhproto.OutgoingLogEntryJSON, keywordsRegEx []*regexp.Regexp) {
+	resp.Header().Add("Content-Type", "text/plain; charset=utf-8")
+
+	cnt := 0
+	cntReturned := 0
+
+	for ent := range results {
+		msgMatch := true
+
+		if keywordsRegEx != nil {
+			for _, re := range keywordsRegEx {
+				if re != nil && !re.MatchString(ent.Msg) {
+					msgMatch = false
+				}
+			}
+		}
+
+		if msgMatch {
+			resp.Write([]byte(
+				fmt.Sprintf(
+					logEntryForamt,
+					time.Unix(0, ent.Ts).Format(dateTimeFormat),
+					ent.Src,
+					ent.Sev,
+					ent.Msg,
+				),
+			))
+		}
+
+		cnt++
+	}
+
+	webuiTrace.Debugf("%d entries read.", cnt)
+	webuiTrace.Debugf("%d entries returned.", cntReturned)
 }

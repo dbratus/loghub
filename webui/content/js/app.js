@@ -9,23 +9,35 @@
 				minSev = getSev(true),
 				maxSev = getSev(false),
 				sources = getSources(),
-				keywords = getKeywords();
-
-			if (from && range && minSev && maxSev) {
-				$('.log').
-					empty().
-					append('<img src="/img/loading.gif" class="loading">');
-
-				$.get('log', {
+				keywords = getKeywords(),
+				query = {
 					from: from,
 					range: range,
 					minSev: minSev,
 					maxSev: maxSev,
 					sources: sources,
 					keywords: keywords
-				}).done(function (data) {
+				};
+
+			if (from && range && minSev && maxSev) {
+				$('.log').
+					empty().
+					append('<img src="/img/loading.gif" class="loading">');
+
+				$.get('log', query).done(function (data) {
 					var log = $('.log').empty(),
 						i;
+
+					if (data.length > 0) {
+						log.append(
+							$('<p></p>').append(
+								$('<a></a>').
+									attr('href', String.prototype.concat('log?', $.param(query), '&text=1')).
+									attr('target', '_blank').
+									text('Get as text.')
+							)
+						);
+					}
 
 					for (i = 0; i < data.length; i++) {
 						log.append(
