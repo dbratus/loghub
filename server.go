@@ -144,6 +144,8 @@ func handleConnection(addr net.Addr, conn io.ReadWriteCloser, handler lhproto.Pr
 			break
 		}
 
+		serverTrace.Debugf("Got %s from %s.", header.Action, addr.String())
+
 		if authorizer != nil && !authorizer.isAllowed(header.Action, header.Usr, header.Pass) {
 			serverTrace.Warnf("Access denied to %s, action %s, from %s.", header.Usr, header.Action, addr.String())
 

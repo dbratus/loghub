@@ -121,7 +121,11 @@ func (h *defaultHub) run() {
 			}
 		}
 
-		go ForwardLog(results, cmd.entries)
+		if results != nil {
+			go ForwardLog(results, cmd.entries)
+		} else {
+			close(cmd.entries)
+		}
 	}
 
 	onSetLogStat := func(stat *LogStat) {
