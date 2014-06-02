@@ -453,15 +453,34 @@ func (mg *defaultLogManager) run() {
 
 		for fileName := range fileNames {
 			if logFile, err := getLogFile(fileName, false, true); err == nil {
+				src, _ := parseLogFileName(fileName)
+
 				res := make(chan *LogEntry)
+				resWithSrc := make(chan *LogEntry)
+
+				//Sources already selected, so the source filter
+				//is not required. Moreover, as the entries have no
+				//sources stored due to optimisation, non-empty source
+				//filter will always return empty result.
+				cmd.query.Source = ""
 
 				logFile.ReadLog(cmd.query, res)
 
+				go func() {
+					for ent := range res {
+						//Restoring the source.
+						ent.Source = src
+						resWithSrc <- ent
+					}
+
+					close(resWithSrc)
+				}()
+
 				if results == nil {
-					results = res
+					results = resWithSrc
 				} else {
 					merged := make(chan *LogEntry)
-					go MergeLogs(results, res, merged)
+					go MergeLogs(results, resWithSrc, merged)
 					results = merged
 				}
 			} else {
@@ -501,6 +520,10 @@ func (mg *defaultLogManager) run() {
 			srcInfo.history.Insert(timestampToTime(ent.Timestamp))
 
 			if logFile, err := getLogFile(logFileToWrite, true, true); err == nil {
+				//Removing source to make the entry smaller.
+				//The source can be restored from the log file directory name.
+				ent.Source = ""
+
 				logFile.WriteLog(ent)
 			} else {
 				logManagerTrace.Errorf("Failed to obtain log file: %s.", err.Error())
@@ -694,6 +717,10 @@ func (mg *defaultLogManager) run() {
 			if logFile, err := getLogFile(cmd.id, true, false); err == nil {
 				go func() {
 					for ent := range cmd.entries {
+						//Removing source to make the entry smaller.
+						//The source can be restored from the log file directory name.
+						ent.Source = ""
+
 						logFile.WriteLog(ent)
 					}
 
@@ -726,6 +753,10 @@ func (mg *defaultLogManager) run() {
 				if mergedLogFile, err := OpenLogFile(mergedFileName, true); err == nil {
 					go func() {
 						for ent := range mergedEntries {
+							//Removing source to make the entry smaller.
+							//The source can be restored from the log file directory name.
+							ent.Source = ""
+
 							mergedLogFile.WriteLog(ent)
 						}
 
