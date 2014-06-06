@@ -574,6 +574,8 @@ func passCommand(args []string) {
 	useTLS := flags.Bool("tls", false, "Whether to use TLS protocol.")
 	trust := flags.Bool("trust", false, "Whether to trust any server certificate.")
 
+	flags.Parse(args)
+
 	if *user == "" {
 		println("User is not specified.")
 		os.Exit(1)
