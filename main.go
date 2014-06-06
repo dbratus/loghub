@@ -24,17 +24,22 @@ import (
 
 const dateTimeFormat = "2006-01-02 15:04:05"
 
-var commands = map[string]func([]string){
-	"log":      logCommand,
-	"hub":      hubCommand,
-	"ui":       uiCommand,
-	"get":      getCommand,
-	"put":      putCommand,
-	"truncate": truncateCommand,
-	"stat":     statCommand,
-	"help":     helpCommand,
-	"user":     userCommand,
-	"pass":     passCommand,
+type consoleCommand struct {
+	command     func([]string)
+	description string
+}
+
+var commands = map[string]consoleCommand{
+	"log":      consoleCommand{logCommand, "Starts log."},
+	"hub":      consoleCommand{hubCommand, "Starts hub."},
+	"ui":       consoleCommand{uiCommand, "Starts web UI."},
+	"get":      consoleCommand{getCommand, "Gets log entries from log or hub."},
+	"put":      consoleCommand{putCommand, "Puts log entries to log or hub."},
+	"truncate": consoleCommand{truncateCommand, "Truncates the log."},
+	"stat":     consoleCommand{statCommand, "Gets stats of a log or hub."},
+	"user":     consoleCommand{userCommand, "Manages user accounts."},
+	"pass":     consoleCommand{passCommand, "Changes user's password."},
+	"help":     consoleCommand{helpCommand, "Prints help for a specific command."},
 }
 
 func main() {
@@ -44,22 +49,28 @@ func main() {
 	}
 
 	if cmd, found := commands[os.Args[1]]; found {
-		cmd(os.Args[2:])
+		cmd.command(os.Args[2:])
 	}
 }
 
 func printCommands() {
 	fmt.Println("Usage: loghub <command> <flags>")
 	fmt.Println("Commands:")
-	fmt.Println("  log       Starts log.")
-	fmt.Println("  hub       Starts hub.")
-	fmt.Println("  ui        Starts web UI.")
-	fmt.Println("  get       Gets log entries from log or hub.")
-	fmt.Println("  put       Puts log entries to log or hub.")
-	fmt.Println("  truncate  Truncates the log.")
-	fmt.Println("  stat      Gets stats of a log or hub.")
-	fmt.Println("  user      Manages user accounts.")
-	fmt.Println("  pass      Changes user's password.")
+
+	maxCmdLen := 0
+
+	for cmd, _ := range commands {
+		l := len(cmd)
+
+		if l > maxCmdLen {
+			maxCmdLen = l
+		}
+	}
+
+	for cmd, inf := range commands {
+		fmt.Printf("  %s%s%s\n", cmd, strings.Repeat(" ", maxCmdLen-len(cmd)+1), inf.description)
+	}
+
 	fmt.Println()
 	fmt.Println("See 'loghub help <command>' for more information on a specific command.")
 }
@@ -583,5 +594,4 @@ func passCommand(args []string) {
 }
 
 func helpCommand(args []string) {
-
 }
