@@ -1,0 +1,12 @@
+
+Manages user roles.
+
+This command creates or updates a user overriding its list of roles. Each roles enables access to a number of loghub actions.
+
+The following roles are supported:
+
+* reader: get, pass
+* writer: put, pass
+* admin: get, truncate, stat, user, pass
+
+Using of -trust flag in production mode should be avoided. This flag opens the log to the "men in the middle" attack.

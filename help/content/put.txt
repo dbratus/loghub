@@ -1,0 +1,16 @@
+
+Puts a list of entries to a log.
+
+In this mode loghub reads stdin line by line parsing each line as a JSON of the following format:
+
+{
+	"Sev": <severity>   //Number [0, 255]
+	"Src": <log source> //String
+	"Msg": <message>    //String
+}
+
+Each line must represent exactly one log entry.
+
+The -addr parameter must specify an address of a log, not hub.
+
+Using of -trust flag in production mode should be avoided. This flag opens the log to the "men in the middle" attack.

@@ -1,0 +1,6 @@
+
+Starts loghub in the ui mode.
+
+In this mode loghub accepts HTTP/HTTPS requests at the port specified in the -http parameter.
+
+If -cert and -key are specified, the ui is available by HTTPS, not HTTP.

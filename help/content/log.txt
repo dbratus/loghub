@@ -1,0 +1,8 @@
+
+Starts loghub in the log mode.
+
+The -listen parameter must always include ip or host by which the log can be accessed remotely. This address is send to the hub and will be used to connect the log.
+
+It is important to take into account that the limit specified by the -lim parameter is a soft limit. The log may continue to grow above it. So, it should be set lower than the disk capacity.
+
+Using of -trust flag in production mode should be avoided. This flag opens the log to the "men in the middle" attack.

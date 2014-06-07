@@ -1,0 +1,16 @@
+
+Gets stats of a log or hub.
+
+This command prints to the stdout the information on the log or logs connected to a hub in the format:
+
+host1:50001 512Kb/1Mb 50.00%
+host2:50003 2Mb/4Mb 57.17%
+host3:50005 4Mb/16Mb 27.68%
+host4:50002 1Mb/2Mb 50.05%
+host5:50004 1Mb/8Mb 14.44%
+Total 38Mb/1023Mb 3.77%
+
+Where each line is:
+<log address> <log size>/<log soft limit> <percent full>
+
+Using of -trust flag in production mode should be avoided. This flag opens the log to the "men in the middle" attack.

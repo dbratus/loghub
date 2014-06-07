@@ -1,0 +1,4 @@
+
+Starts loghub in the hub mode.
+
+Using of -trust flag in production mode should be avoided. This flag opens the log to the "men in the middle" attack.

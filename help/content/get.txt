@@ -1,0 +1,28 @@
+
+Fetches logs from a log or hub.
+
+The -src parameter is a comma separated list of regexps specifying the log sources which must be included into the result. If -src is not specified, all log sources are included.
+
+The -range specifies a time range relative to -base. To get entries before -base, negative -range should be specified.
+
+The -range must be a Go duration string: "A duration string is a possibly signed sequence of decimal numbers, each with optional fraction and a unit suffix, such as "300ms", "-1.5h" or "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"."
+
+Examples of -tsfmt value:
+
+ANSIC       "Mon Jan _2 15:04:05 2006"
+UnixDate    "Mon Jan _2 15:04:05 MST 2006"
+RubyDate    "Mon Jan 02 15:04:05 -0700 2006"
+RFC822      "02 Jan 06 15:04 MST"
+RFC822Z     "02 Jan 06 15:04 -0700"
+RFC850      "Monday, 02-Jan-06 15:04:05 MST"
+RFC1123     "Mon, 02 Jan 2006 15:04:05 MST"
+RFC1123Z    "Mon, 02 Jan 2006 15:04:05 -0700"
+RFC3339     "2006-01-02T15:04:05Z07:00"
+RFC3339Nano "2006-01-02T15:04:05.999999999Z07:00"
+Kitchen     "3:04PM"
+Stamp       "Jan _2 15:04:05"
+StampMilli  "Jan _2 15:04:05.000"
+StampMicro  "Jan _2 15:04:05.000000"
+StampNano   "Jan _2 15:04:05.000000000"
+
+Using of -trust flag in production mode should be avoided. This flag opens the log to the "men in the middle" attack.
