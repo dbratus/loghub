@@ -195,8 +195,42 @@ func (cli *logHubClient) Write(cred *Credentials, entries chan *IncomingLogEntry
 	}()
 }
 
+func (cli *logHubClient) writeLogQueries(writer jstream.Writer, queries chan *LogQueryJSON) bool {
+	ok := true
+
+	for q := range queries {
+		if ok {
+			if err := writer.WriteJSON(q); err != nil {
+				clientTrace.Errorf("Failed to write message: %s.", err.Error())
+				ok = false
+			}
+		}
+	}
+
+	if ok {
+		if err := writer.WriteDelimiter(); err != nil {
+			clientTrace.Errorf("Failed to write message: %s.", err.Error())
+			ok = false
+		}
+	}
+
+	return ok
+}
+
+func readJSONEntry(reader jstream.Reader, ent interface{}, ok *bool) bool {
+	if err := reader.ReadJSON(ent); err != nil {
+		if err != jstream.ErrStreamDelimiter {
+			clientTrace.Errorf("Failed to read message: %s.", err.Error())
+			*ok = false
+		}
+
+		return false
+	}
+
+	return true
+}
+
 func (cli *logHubClient) Read(cred *Credentials, queries chan *LogQueryJSON, entries chan *OutgoingLogEntryJSON) {
-	//TODO: Get rid of duplication.
 	var conn io.ReadWriteCloser
 	atomic.AddInt32(cli.activeOps, 1)
 
@@ -222,43 +256,25 @@ func (cli *logHubClient) Read(cred *Credentials, queries chan *LogQueryJSON, ent
 	}
 
 	go func() {
-		ok := true
-
-		for q := range queries {
-			if ok {
-				if err := writer.WriteJSON(q); err != nil {
-					clientTrace.Errorf("Failed to write message: %s.", err.Error())
-					ok = false
-				}
-			}
-		}
+		ok := cli.writeLogQueries(writer, queries)
 
 		if ok {
-			if err := writer.WriteDelimiter(); err != nil {
-				clientTrace.Errorf("Failed to write message: %s.", err.Error())
-				cli.brokenConnChan <- conn
+			reader := jstream.NewReader(conn)
+
+			for {
+				ent := new(OutgoingLogEntryJSON)
+
+				if !readJSONEntry(reader, ent, &ok) {
+					break
+				}
+
+				entries <- ent
+			}
+
+			if ok {
+				cli.putConnChan <- conn
 			} else {
-				reader := jstream.NewReader(conn)
-
-				for {
-					ent := new(OutgoingLogEntryJSON)
-
-					if err := reader.ReadJSON(ent); err != nil {
-						if err != jstream.ErrStreamDelimiter {
-							clientTrace.Errorf("Failed to read message: %s.", err.Error())
-							ok = false
-						}
-						break
-					}
-
-					entries <- ent
-				}
-
-				if ok {
-					cli.putConnChan <- conn
-				} else {
-					cli.brokenConnChan <- conn
-				}
+				cli.brokenConnChan <- conn
 			}
 		} else {
 			cli.brokenConnChan <- conn
@@ -270,7 +286,6 @@ func (cli *logHubClient) Read(cred *Credentials, queries chan *LogQueryJSON, ent
 }
 
 func (cli *logHubClient) InternalRead(cred *Credentials, queries chan *LogQueryJSON, entries chan *InternalLogEntryJSON) {
-	//TODO: Get rid of duplication.
 	var conn io.ReadWriteCloser
 	atomic.AddInt32(cli.activeOps, 1)
 
@@ -296,43 +311,25 @@ func (cli *logHubClient) InternalRead(cred *Credentials, queries chan *LogQueryJ
 	}
 
 	go func() {
-		ok := true
-
-		for q := range queries {
-			if ok {
-				if err := writer.WriteJSON(q); err != nil {
-					clientTrace.Errorf("Failed to write message: %s.", err.Error())
-					ok = false
-				}
-			}
-		}
+		ok := cli.writeLogQueries(writer, queries)
 
 		if ok {
-			if err := writer.WriteDelimiter(); err != nil {
-				clientTrace.Errorf("Failed to write message: %s.", err.Error())
-				cli.brokenConnChan <- conn
+			reader := jstream.NewReader(conn)
+
+			for {
+				ent := new(InternalLogEntryJSON)
+
+				if !readJSONEntry(reader, ent, &ok) {
+					break
+				}
+
+				entries <- ent
+			}
+
+			if ok {
+				cli.putConnChan <- conn
 			} else {
-				reader := jstream.NewReader(conn)
-
-				for {
-					ent := new(InternalLogEntryJSON)
-
-					if err := reader.ReadJSON(ent); err != nil {
-						if err != jstream.ErrStreamDelimiter {
-							clientTrace.Errorf("Failed to read message: %s.", err.Error())
-							ok = false
-						}
-						break
-					}
-
-					entries <- ent
-				}
-
-				if ok {
-					cli.putConnChan <- conn
-				} else {
-					cli.brokenConnChan <- conn
-				}
+				cli.brokenConnChan <- conn
 			}
 		} else {
 			cli.brokenConnChan <- conn
@@ -419,7 +416,6 @@ func (cli *logHubClient) Accept(cred *Credentials, cmd *AcceptJSON, entries chan
 	}
 
 	writer := jstream.NewWriter(conn)
-	reader := jstream.NewReader(conn)
 
 	header := MessageHeaderJSON{ActionAccept, cred.User, cred.Password}
 	if err := writer.WriteJSON(&header); err != nil {
@@ -452,6 +448,8 @@ func (cli *logHubClient) Accept(cred *Credentials, cmd *AcceptJSON, entries chan
 		}
 
 		if ok {
+			reader := jstream.NewReader(conn)
+
 			if err := writer.WriteDelimiter(); err != nil {
 				clientTrace.Errorf("Failed to write message: %s.", err.Error())
 				respond(false)
@@ -490,7 +488,6 @@ func (cli *logHubClient) Stat(cred *Credentials, stats chan *StatJSON) {
 	}
 
 	writer := jstream.NewWriter(conn)
-	reader := jstream.NewReader(conn)
 
 	header := MessageHeaderJSON{ActionStat, cred.User, cred.Password}
 	if err := writer.WriteJSON(&header); err != nil {
@@ -502,16 +499,13 @@ func (cli *logHubClient) Stat(cred *Credentials, stats chan *StatJSON) {
 	}
 
 	go func() {
+		reader := jstream.NewReader(conn)
 		ok := true
 
 		for {
 			stat := new(StatJSON)
 
-			if err := reader.ReadJSON(stat); err != nil {
-				if err != jstream.ErrStreamDelimiter {
-					clientTrace.Errorf("Failed to read message: %s.", err.Error())
-					ok = false
-				}
+			if !readJSONEntry(reader, stat, &ok) {
 				break
 			}
 

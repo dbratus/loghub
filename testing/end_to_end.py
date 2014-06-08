@@ -17,7 +17,7 @@ log_lim = 1
 for i in range(1, LOGS_COUNT+1):
 	log_proc = subprocess.Popen([
 		'loghub', 'log', 
-		'-debug',
+		#'-debug',
 		'-listen', 'localhost:' + str(BASE_PORT + i), 
 		'-home', LOG_BASE + 'log' + str(i),
 		'-cert', 'cert.pem',
@@ -34,7 +34,7 @@ time.sleep(1)
 #Starting hub.
 hub_proc = subprocess.Popen([
 	'loghub', 'hub', 
-	'-debug',
+	#'-debug',
 	'-home', LOG_BASE + 'hub',
 	'-cert', 'cert.pem',
 	'-key', 'testkey.pem',
@@ -47,7 +47,7 @@ time.sleep(1)
 #Starting ui.
 ui_proc = subprocess.Popen([
 	'loghub', 'ui', 
-	'-debug',
+	#'-debug',
 	'-addr', 'localhost:' + str(BASE_PORT),
 	'-cert', 'cert.pem',
 	'-key', 'testkey.pem',
