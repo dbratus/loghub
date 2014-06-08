@@ -26,7 +26,7 @@ type LockId int64
 
 const InvalidLockId = LockId(-1)
 const blocksCapacity = 10
-const lockTimeout = time.Second * 10
+const lockTimeout = time.Minute * 10
 
 type lockRequest struct {
 	owner  int64

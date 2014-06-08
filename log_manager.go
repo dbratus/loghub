@@ -341,7 +341,9 @@ func (mg *defaultLogManager) run() {
 
 	onClose := func(logFileToClose string) {
 		if logFile, found := openLogFiles[logFileToClose]; found {
-			atomic.AddInt64(closedSize, logFile.Size())
+			if atomic.AddInt64(closedSize, logFile.Size()) < 0 {
+				logManagerTrace.Warnf("Closed size became negative on closing of %s.", logFileToClose)
+			}
 
 			logFile.Close()
 
@@ -405,7 +407,9 @@ func (mg *defaultLogManager) run() {
 					openLogFiles[fileName] = logFile
 
 					//Tracking the closed files' size.
-					atomic.AddInt64(closedSize, -logFile.Size())
+					if atomic.AddInt64(closedSize, -logFile.Size()) < 0 {
+						logManagerTrace.Warnf("Closed size became negative on opening of %s.", fileName)
+					}
 
 					timeout := new(int64)
 					*timeout = timeToTimestamp(time.Now().Add(logFileTimeout))
@@ -545,15 +549,15 @@ func (mg *defaultLogManager) run() {
 		}
 	}
 
-	onSize := func(sz chan int64) {
+	onSize := func(szChan chan int64) {
 		size := atomic.LoadInt64(closedSize)
 
 		for _, logFile := range openLogFiles {
 			size += logFile.Size()
 		}
 
-		sz <- size
-		close(sz)
+		szChan <- size
+		close(szChan)
 	}
 
 	deleteLogSource := func(src string) {
@@ -572,7 +576,7 @@ func (mg *defaultLogManager) run() {
 			return
 		}
 
-		srcDirName := mg.home + "/" + getSourceDirName(src)
+		srcDirName := getSourceDirName(src)
 		minTs := timeToTimestamp(hist.Start())
 
 		for minTs <= limit {
@@ -600,6 +604,8 @@ func (mg *defaultLogManager) run() {
 		logManagerTrace.Debugf("Truncating log source %s.", src)
 
 		for _, fileName := range fileNames {
+			fileName = mg.home + "/" + fileName
+
 			logManagerTrace.Debugf("Deleting log file %s.", fileName)
 
 			size := int64(0)
@@ -611,7 +617,9 @@ func (mg *defaultLogManager) run() {
 			}
 
 			if err := os.Remove(fileName); err == nil {
-				atomic.AddInt64(closedSize, -size)
+				if atomic.AddInt64(closedSize, -size) < 0 {
+					logManagerTrace.Warnf("Closed size became negative on truncating of %s.", fileName)
+				}
 			} else {
 				logManagerTrace.Errorf("Failed to remove log file: %s.", err.Error())
 			}
@@ -630,21 +638,17 @@ func (mg *defaultLogManager) run() {
 		sources := filterLogSources(cmd.source)
 
 		if len(sources) > 0 {
-			limitFName := getFileNameForTimestamp(cmd.limit)
-
 			for _, src := range sources {
 				if srcInfo, found := logSources[src]; found {
 					lck := srcInfo.lock.Lock(opCnt, minTimestamp, cmd.limit, false)
 
-					for fileName, _ := range openLogFiles {
-						fileSrc, fileTs := parseLogFileName(fileName)
+					fileNames, removeDir := getFileNamesForTruncation(srcInfo.history, src, cmd.limit)
 
-						if fileSrc == src && fileTs <= limitFName {
+					for _, fileName := range fileNames {
+						if _, found := openLogFiles[fileName]; found {
 							onClose(fileName)
 						}
 					}
-
-					fileNames, removeDir := getFileNamesForTruncation(srcInfo.history, src, cmd.limit)
 
 					go truncateLogSource(srcInfo.lock, lck, src, fileNames, removeDir)
 				}
@@ -727,7 +731,9 @@ func (mg *defaultLogManager) run() {
 					logFile.Close()
 
 					if stat, err = os.Stat(fileName); err == nil {
-						atomic.AddInt64(closedSize, logFileSize(stat))
+						if atomic.AddInt64(closedSize, logFileSize(stat)) < 0 {
+							logManagerTrace.Warnf("Closed size became negative on accepting/creating of %s.", fileName)
+						}
 					}
 
 					srcInfo.lock.Unlock(lck)
@@ -739,7 +745,9 @@ func (mg *defaultLogManager) run() {
 				return
 			}
 		} else if err == nil {
-			atomic.AddInt64(closedSize, -logFileSize(stat))
+			if atomic.AddInt64(closedSize, -logFileSize(stat)) < 0 {
+				logManagerTrace.Warnf("Closed size became negative on accepting/merging of %s.", fileName)
+			}
 
 			if logFile, err := getLogFile(cmd.id, false, false); err == nil {
 				entriesRead := make(chan *LogEntry)
@@ -778,7 +786,9 @@ func (mg *defaultLogManager) run() {
 						}
 
 						if stat, err = os.Stat(fileName); err == nil {
-							atomic.AddInt64(closedSize, logFileSize(stat))
+							if atomic.AddInt64(closedSize, logFileSize(stat)) < 0 {
+								logManagerTrace.Warnf("Closed size became negative on merging of %s.", fileName)
+							}
 						} else {
 							logManagerTrace.Errorf("Failed to get stat of renamed file: %s.", err.Error())
 						}
@@ -830,14 +840,22 @@ func (mg *defaultLogManager) run() {
 				}
 
 				go func(removeDir bool) {
+					logManagerTrace.Debugf("Removing log file %s on transfer chunk deletion.", fileName)
+
 					if err := os.Remove(fileName); err == nil {
-						atomic.AddInt64(closedSize, -logFileSize(stat))
+						if atomic.AddInt64(closedSize, -logFileSize(stat)) < 0 {
+							logManagerTrace.Warnf("Closed size became negative on deleting of %s.", fileName)
+						}
 					} else {
 						logManagerTrace.Errorf("Failed to remove log file on transfer chunk deletion: %s.", err.Error())
 					}
 
-					if err := os.RemoveAll(dirName); err != nil {
-						logManagerTrace.Errorf("Failed to remove source directory on transfer chunk deletion: %s.", err.Error())
+					if removeDir {
+						logManagerTrace.Debugf("Removing source directory %s on transfer chunk deletion.", dirName)
+
+						if err := os.RemoveAll(dirName); err != nil {
+							logManagerTrace.Errorf("Failed to remove source directory on transfer chunk deletion: %s.", err.Error())
+						}
 					}
 
 					srcInfo.lock.Unlock(lck)
@@ -845,6 +863,8 @@ func (mg *defaultLogManager) run() {
 					close(cmd.ack)
 				}(removeDir)
 			} else {
+				logManagerTrace.Errorf("Failed to get log file stat on transfer chunk deletion: %s.", err.Error())
+
 				cmd.ack <- false
 				close(cmd.ack)
 			}
