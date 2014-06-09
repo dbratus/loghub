@@ -51,6 +51,7 @@ type logFileState struct {
 	PrevPayloadLen       int32
 	NextHopStartOffset   int64
 	HopCounter           int
+	Offset               int64
 }
 
 func (h *entryHeader) NextOffset() int64 {
@@ -68,6 +69,7 @@ func newLogFileState() *logFileState {
 		NextHopStartOffset:   logFileMinOffset,
 		HopCounter:           hopLength,
 		Version:              currentStateVersion,
+		Offset:               0,
 	}
 }
 
@@ -455,7 +457,7 @@ func initLogFile(file *os.File) (state *logFileState, initialized bool) {
 		return
 	}
 
-	if ok := state.read(file); ok {
+	if ok := state.read(file); ok && state.Offset == fileSize {
 		//Setting the cursor to the end of the file.
 		if _, err := file.Seek(0, 2); err != nil {
 			logFileTrace.Errorf("Failed to seek to the end of a log file: %s.", err.Error())
@@ -540,7 +542,7 @@ func (log *LogFile) run(file *os.File) {
 	buf := make([]byte, 0, defaultEntryBufferSize)
 
 	state, initialized := initLogFile(file)
-	currentOffset, _ := file.Seek(0, 1)
+	state.Offset, _ = file.Seek(0, 1)
 	readsCounter := new(int32)
 
 	onWrite := func(ent *LogEntry) {
@@ -548,24 +550,24 @@ func (log *LogFile) run(file *os.File) {
 			backHop := int32(0)
 
 			if state.HopCounter--; state.HopCounter == 0 {
-				backHop = int32(currentOffset - state.NextHopStartOffset)
+				backHop = int32(state.Offset - state.NextHopStartOffset)
 			}
 
 			buf, state.PrevPayloadLen = writeEntry(buf, ent, state.PrevPayloadLen, backHop)
 
 			if _, err := file.Write(buf); err != nil {
 				logFileTrace.Errorf("Failed to wrtie log entry: %s.", err.Error())
-				currentOffset, _ = file.Seek(0, 1)
+				state.Offset, _ = file.Seek(0, 1)
 
 			} else {
 				if state.HopCounter == 0 {
-					if writeHop(file, currentOffset, state.NextHopStartOffset) {
-						state.NextHopStartOffset = currentOffset
+					if writeHop(file, state.Offset, state.NextHopStartOffset) {
+						state.NextHopStartOffset = state.Offset
 						state.HopCounter = hopLength
 					}
 				}
 
-				currentOffset += int64(len(buf))
+				state.Offset += int64(len(buf))
 			}
 
 			state.LastTimestampWritten = ent.Timestamp
@@ -579,7 +581,7 @@ func (log *LogFile) run(file *os.File) {
 			return
 		}
 
-		lastEntryOffset := currentOffset - int64(state.PrevPayloadLen+entryPayloadBase)
+		lastEntryOffset := state.Offset - int64(state.PrevPayloadLen+entryPayloadBase)
 
 		if lastEntryOffset < logFileMinOffset {
 			close(cmd.entries)
@@ -592,7 +594,7 @@ func (log *LogFile) run(file *os.File) {
 	}
 
 	onSize := func(sz chan int64) {
-		sz <- currentOffset - logFileStateSize
+		sz <- state.Offset - logFileStateSize
 		close(sz)
 	}
 
