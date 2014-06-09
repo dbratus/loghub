@@ -296,7 +296,7 @@ func (mg *defaultLogManager) run() {
 	logSources, closedSize, initialized := initLogManager(mg.home)
 	openLogFiles := make(map[string]LogStorage)
 	logFileTimeouts := make(map[string]*int64)
-	closeLogFileChan := make(chan string)
+	closeLogFileChan := make(chan string, 1000)
 
 	maxOpenFiles := rlimit.GetMaxOpenFiles()
 
