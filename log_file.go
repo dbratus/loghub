@@ -25,6 +25,7 @@ const hopLength = 64
 const currentStateVersion = 1
 const maxOffset = int32(^uint32(0) ^ 1<<31)
 const logFileStateSize = int64(512)
+const logFileMinOffset = logFileStateSize
 
 var logFileTrace = trace.New("LogFile")
 
@@ -60,6 +61,16 @@ func (h *entryHeader) PrevOffset() int64 {
 	return int64(h.prevPayloadLength) + int64(entryPayloadBase)
 }
 
+func newLogFileState() *logFileState {
+	return &logFileState{
+		LastTimestampWritten: 0,
+		PrevPayloadLen:       0,
+		NextHopStartOffset:   logFileMinOffset,
+		HopCounter:           hopLength,
+		Version:              currentStateVersion,
+	}
+}
+
 func (state *logFileState) writeToBuffer() ([]byte, error) {
 	buf := make([]byte, logFileStateSize)
 
@@ -87,43 +98,36 @@ func (state *logFileState) write(file *os.File) error {
 		buf = b
 	}
 
-	if _, err := file.Write(buf); err != nil {
+	if _, err := file.WriteAt(buf, 0); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (state *logFileState) read(file *os.File) (int64, bool) {
+func (state *logFileState) read(file *os.File) bool {
 	buf := make([]byte, logFileStateSize)
-	var offset int64
 
-	if pos, err := file.Seek(-logFileStateSize, 2); err != nil {
-		logFileTrace.Errorf("Failed to seek to the begining of the state: %s.", err.Error())
-		return 0, false
-	} else {
-		offset = pos
-	}
-
-	if _, err := file.Read(buf); err != nil {
+	if _, err := file.ReadAt(buf, 0); err != nil {
 		logFileTrace.Errorf("Failed to read the state: %s.", err.Error())
-		return 0, false
+		return false
 	}
 
 	hashStart := len(buf) - md5.Size
 	hash := md5.Sum(buf[:hashStart])
 
 	if bytes.Compare(hash[:], buf[hashStart:]) != 0 {
-		return 0, false
+		logFileTrace.Error("Failed to read the state, hash doesn't match.")
+		return false
 	}
 
 	decoder := gob.NewDecoder(bytes.NewBuffer(buf[4:hashStart]))
 	if err := decoder.Decode(state); err != nil {
 		logFileTrace.Errorf("Failed to decode the state: %s.", err.Error())
-		return 0, false
+		return false
 	}
 
-	return offset, true
+	return true
 }
 
 func logFileSize(stat os.FileInfo) int64 {
@@ -395,7 +399,7 @@ func findAndReadEntries(file *os.File, lastEntryOffset int64, cmd readLogCmd, re
 			return
 		}
 
-		if offset == 0 {
+		if offset == logFileMinOffset {
 			if header.timestamp >= cmd.query.From && header.timestamp <= cmd.query.To {
 				readEntries(file, cmd, offset, lastEntryOffset)
 				return
@@ -426,24 +430,32 @@ func initLogFile(file *os.File) (state *logFileState, initialized bool) {
 		fileSize = stat.Size()
 	}
 
-	state = new(logFileState)
-	state.LastTimestampWritten = 0
-	state.PrevPayloadLen = 0
-	state.NextHopStartOffset = 0
-	state.HopCounter = hopLength
-	state.Version = currentStateVersion
+	state = newLogFileState()
 
-	if fileSize == 0 {
-		return
-	}
-
-	if offset, ok := state.read(file); ok {
-		if err := file.Truncate(offset); err != nil {
-			logFileTrace.Errorf("Failed to truncate a log file: %s.", err.Error())
+	if fileSize < logFileStateSize {
+		//Reserving space for the state.
+		if err := file.Truncate(logFileStateSize); err != nil {
+			logFileTrace.Errorf("Failed to truncate a new log file: %s.", err.Error())
 			initialized = false
 			return
 		}
 
+		//Writing the initial state.
+		if err := state.write(file); err != nil {
+			logFileTrace.Errorf("Failed to write a new log file state: %s.", err.Error())
+		}
+
+		//Setting the cursor to the end of the file.
+		if _, err := file.Seek(0, 2); err != nil {
+			logFileTrace.Errorf("Failed to seek to the end of a new log file: %s.", err.Error())
+			initialized = false
+			return
+		}
+
+		return
+	}
+
+	if ok := state.read(file); ok {
 		//Setting the cursor to the end of the file.
 		if _, err := file.Seek(0, 2); err != nil {
 			logFileTrace.Errorf("Failed to seek to the end of a log file: %s.", err.Error())
@@ -454,7 +466,9 @@ func initLogFile(file *os.File) (state *logFileState, initialized bool) {
 		return
 	}
 
-	offset := int64(0)
+	state = newLogFileState()
+
+	offset := int64(logFileStateSize)
 
 	for {
 		header, ok := readEntryHeader(file, offset)
@@ -562,16 +576,23 @@ func (log *LogFile) run(file *os.File) {
 	onRead := func(cmd readLogCmd) {
 		if cmd.query.From >= cmd.query.To || cmd.query.MinSeverity > cmd.query.MaxSeverity {
 			close(cmd.entries)
+			return
 		}
 
 		lastEntryOffset := currentOffset - int64(state.PrevPayloadLen+entryPayloadBase)
 
+		if lastEntryOffset < logFileMinOffset {
+			close(cmd.entries)
+			return
+		}
+
 		atomic.AddInt32(readsCounter, 1)
+
 		go findAndReadEntries(file, lastEntryOffset, cmd, readsCounter)
 	}
 
 	onSize := func(sz chan int64) {
-		sz <- currentOffset
+		sz <- currentOffset - logFileStateSize
 		close(sz)
 	}
 

@@ -8,6 +8,7 @@ package main
 import (
 	"fmt"
 	"github.com/dbratus/loghub/tmpdir"
+	"os"
 	"testing"
 )
 
@@ -285,4 +286,46 @@ func TestWriteReadLogFile(t *testing.T) {
 
 	log.Close()
 	log = nil
+}
+
+func TestWriteReadLogFileState(t *testing.T) {
+	state := newLogFileState()
+
+	state.LastTimestampWritten = 100
+	state.PrevPayloadLen = 200
+
+	home := tmpdir.GetPath("loghub.test.home")
+
+	tmpdir.Make(home)
+	defer tmpdir.Rm(home)
+
+	if f, err := os.OpenFile(home+"/log-file-state", os.O_RDWR|os.O_CREATE, 0660); err == nil {
+		if err = f.Truncate(logFileStateSize); err != nil {
+			t.Errorf("Failed to truncate state file: %s.", err.Error())
+			t.FailNow()
+		}
+
+		if err = state.write(f); err != nil {
+			t.Errorf("Failed to write state: %s.", err.Error())
+			t.FailNow()
+		}
+
+		readState := newLogFileState()
+
+		if ok := readState.read(f); !ok {
+			t.Error("Failed to read state.")
+			t.FailNow()
+		}
+
+		if readState.LastTimestampWritten != state.LastTimestampWritten {
+			t.FailNow()
+		}
+
+		if readState.PrevPayloadLen != state.PrevPayloadLen {
+			t.FailNow()
+		}
+	} else {
+		t.Errorf("Failed to open state file: %s.", err.Error())
+		t.Fail()
+	}
 }

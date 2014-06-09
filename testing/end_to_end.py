@@ -100,10 +100,13 @@ try:
 finally:
 	#Terminating hub.
 	hub_proc.terminate()
+	hub_proc.wait()
 
 	#Terminating logs.
 	for p in log_procs:
 		p.terminate()
+		p.wait()
 
 	#Terminating ui.
 	ui_proc.terminate()
+	ui_proc.wait()

@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -168,7 +169,7 @@ func logCommand(args []string, flagsOnly bool) *flag.FlagSet {
 	}
 
 	signals := make(chan os.Signal)
-	signal.Notify(signals, os.Kill, os.Interrupt)
+	signal.Notify(signals, syscall.SIGKILL, syscall.SIGINT, syscall.SIGTERM)
 
 	for _ = range signals {
 		stopServer()
@@ -246,7 +247,7 @@ func hubCommand(args []string, flagsOnly bool) *flag.FlagSet {
 	}
 
 	signals := make(chan os.Signal)
-	signal.Notify(signals, os.Kill, os.Interrupt)
+	signal.Notify(signals, syscall.SIGKILL, syscall.SIGINT, syscall.SIGTERM)
 
 	for _ = range signals {
 		stopServer()
