@@ -146,8 +146,7 @@
 			rangeVal = range.val(),
 			uomVal = $('#range-unit-s:checked').val() || 
 					 $('#range-unit-m:checked').val() ||
-					 $('#range-unit-h:checked').val() || 
-					 $('#range-unit-d:checked').val();
+					 $('#range-unit-h:checked').val();
 
 		if (!format.test(rangeVal)) {
 			range.addClass('error');
