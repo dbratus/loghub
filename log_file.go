@@ -123,7 +123,7 @@ func (state *logFileState) read(file *os.File) (int64, bool) {
 		return 0, false
 	}
 
-	return offset, false
+	return offset, true
 }
 
 func logFileSize(stat os.FileInfo) int64 {
